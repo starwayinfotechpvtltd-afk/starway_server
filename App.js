@@ -52,6 +52,10 @@ try {
   console.error("DB connection failed, but server will continue");
 }
 
+app.get("/", (req, res) => {
+  res.send("Server is running");
+});
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.use("/api/contact", contactRoutes);
