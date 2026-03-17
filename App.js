@@ -10,7 +10,7 @@ import { testConnection } from "./config/db.js";
 import contactRoutes from "./modules/contact/contact.routes.js";
 import errorHandler from "./middleware/errorHandler.js";
 import razorpayRoutes from "./modules/razorpay/razorpay.routes.js";
-// import paypalRoutes from "./modules/paypal/paypal.routes.js";
+import paypalRoutes from "./modules/paypal/paypal.routes.js";
 
 dotenv.config();
 
@@ -46,13 +46,17 @@ if (process.env.NODE_ENV === "development") {
 
 // ─── DB Connection Test ────────────────────────────────────────────────────────
 
-testConnection();
+try {
+  await testConnection();
+} catch (err) {
+  console.error("DB connection failed, but server will continue");
+}
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.use("/api/contact", contactRoutes);
 app.use("/api/razorpay", razorpayRoutes);
-// app.use("/api/paypal", paypalRoutes);
+app.use("/api/paypal", paypalRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
