@@ -9,8 +9,8 @@ import { testConnection } from "./config/db.js";
 // Route imports
 import contactRoutes from "./modules/contact/contact.routes.js";
 import errorHandler from "./middleware/errorHandler.js";
-import razorpayRoutes from "./modules/razorpay/razorpay.routes.js";
-import paypalRoutes from "./modules/paypal/paypal.routes.js";
+// import razorpayRoutes from "./modules/razorpay/razorpay.routes.js";
+// import paypalRoutes from "./modules/paypal/paypal.routes.js";
 
 dotenv.config();
 
@@ -59,8 +59,8 @@ app.get("/", (req, res) => {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.use("/api/contact", contactRoutes);
-app.use("/api/razorpay", razorpayRoutes);
-app.use("/api/paypal", paypalRoutes);
+// app.use("/api/razorpay", razorpayRoutes);
+// app.use("/api/paypal", paypalRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
