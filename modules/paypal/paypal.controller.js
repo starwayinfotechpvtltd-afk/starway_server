@@ -21,9 +21,9 @@ const PAYPAL_BASE_URL =
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error(
-    "❌  PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET is missing in .env\n" +
-    "    Get your keys from: https://developer.paypal.com/dashboard/applications\n" +
-    "    Use sandbox credentials for testing"
+    "PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET is missing in .env\n" +
+    "Get your keys from: https://developer.paypal.com/dashboard/applications\n" +
+    "Use sandbox credentials for testing"
   );
 }
 

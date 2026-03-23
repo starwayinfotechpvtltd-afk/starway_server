@@ -1,10 +1,12 @@
 import { body, validationResult } from "express-validator";
-import { VALID_SERVICES } from "../modules/contact/contact.model.js";
 
-// ─── Validation Rules — mirrors HeroLeadForm fields exactly ──────────────────
+// ─── Rules ────────────────────────────────────────────────────────────────────
+// Mandatory : full_name, email, phone
+// Optional  : designation, project_overview, website_url
 
 const contactRules = [
-  // Full Name
+
+  // Full Name — mandatory
   body("full_name")
     .trim()
     .notEmpty()
@@ -12,7 +14,7 @@ const contactRules = [
     .isLength({ min: 2, max: 100 })
     .withMessage("Full name must be between 2 and 100 characters"),
 
-  // Work Email
+  // Email — mandatory
   body("email")
     .trim()
     .notEmpty()
@@ -21,65 +23,52 @@ const contactRules = [
     .withMessage("Please provide a valid email address")
     .normalizeEmail(),
 
-  // Phone Number (optional)
+  // Phone — mandatory
   body("phone")
-    .optional({ nullable: true, checkFalsy: true })
     .trim()
+    .notEmpty()
+    .withMessage("Phone number is required")
     .matches(/^[+\d\s\-().]{7,20}$/)
     .withMessage("Please provide a valid phone number"),
 
-  // Project Overview
-  body("project_overview")
+  // Designation — optional, save as-is
+  body("designation")
+    .optional({ nullable: true, checkFalsy: true })
     .trim()
-    .notEmpty()
-    .withMessage("Project overview is required")
-    .isLength({ min: 10, max: 3000 })
-    .withMessage("Project overview must be between 10 and 3000 characters"),
+    .isLength({ max: 100 })
+    .withMessage("Designation must be under 100 characters"),
 
-  // Website URL (optional)
+  // Project Overview — optional
+  body("project_overview")
+    .optional({ nullable: true, checkFalsy: true })
+    .trim()
+    .isLength({ max: 3000 })
+    .withMessage("Message must be under 3000 characters"),
+
+  // Website URL — optional
   body("website_url")
     .optional({ nullable: true, checkFalsy: true })
     .trim()
     .isURL({ require_protocol: true })
     .withMessage("Please provide a valid URL including http:// or https://"),
-
-  // Services — array of checkbox values (optional, but each must be a valid option)
-  body("services")
-    .optional({ nullable: true })
-    .isArray({ max: VALID_SERVICES.length })
-    .withMessage("Services must be an array"),
-
-  body("services.*")
-    .optional()
-    .trim()
-    .isIn(VALID_SERVICES)
-    .withMessage(
-      `Each service must be one of: ${VALID_SERVICES.join(", ")}`
-    ),
 ];
 
-// ─── Validation Result Handler ────────────────────────────────────────────────
+// ─── Result handler ───────────────────────────────────────────────────────────
 
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
-    const formatted = errors.array().map(({ path, msg }) => ({
-      field:   path,
-      message: msg,
-    }));
-
     return res.status(422).json({
       success: false,
       message: "Validation failed",
-      errors:  formatted,
+      errors:  errors.array().map(({ path, msg }) => ({ field: path, message: msg })),
     });
   }
 
   next();
 };
 
-// Export as a middleware array — spread directly into route definition
 const validateContact = [...contactRules, handleValidationErrors];
 
 export default validateContact;

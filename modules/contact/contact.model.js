@@ -1,40 +1,30 @@
 import { pool } from "../../config/db.js";
 
-// Valid service options — must match the frontend checkbox labels exactly
-export const VALID_SERVICES = [
-  "E-Commerce / WooCommerce",
-  "PPC Advertising",
-  "Web Design & Development",
-  "Lead Generation",
-  "SEO / AEO / GEO",
-  "Social Media Marketing",
-];
-
-// ─── Create a new lead submission ─────────────────────────────────────────────
+// ─── Create a new contact submission ─────────────────────────────────────────
 
 const createContact = async ({
   full_name,
   email,
   phone,
+  designation,
   project_overview,
   website_url,
-  services,
   ip_address,
 }) => {
   const sql = `
     INSERT INTO contacts
-      (full_name, email, phone, project_overview, website_url, services, ip_address)
+      (full_name, email, phone, designation, project_overview, website_url, ip_address)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `;
 
   const [result] = await pool.execute(sql, [
     full_name,
     email,
-    phone        || null,
-    project_overview,
-    website_url  || null,
-    services?.length ? JSON.stringify(services) : null,
-    ip_address   || null,
+    phone,
+    designation   || null,
+    project_overview || null,
+    website_url   || null,
+    ip_address    || null,
   ]);
 
   return result.insertId;
@@ -59,9 +49,9 @@ const getAllContacts = async ({ page = 1, limit = 20, status } = {}) => {
 
   const dataSql = `
     SELECT
-      id, full_name, email, phone, project_overview,
-      website_url, services, status, ip_address,
-      created_at, updated_at
+      id, full_name, email, phone, designation,
+      project_overview, website_url, status,
+      ip_address, created_at, updated_at
     FROM   contacts
     ${whereClause}
     ORDER  BY created_at DESC
@@ -75,15 +65,7 @@ const getAllContacts = async ({ page = 1, limit = 20, status } = {}) => {
     pool.execute(countSql, countParams),
   ]);
 
-  // Parse services JSON back to array for each row
-  const parsed = rows.map((row) => ({
-    ...row,
-    services: row.services
-      ? (typeof row.services === "string" ? JSON.parse(row.services) : row.services)
-      : [],
-  }));
-
-  return { rows: parsed, total: Number(total) };
+  return { rows, total: Number(total) };
 };
 
 // ─── Get single contact by ID ─────────────────────────────────────────────────
@@ -91,36 +73,33 @@ const getAllContacts = async ({ page = 1, limit = 20, status } = {}) => {
 const getContactById = async (id) => {
   const sql = `
     SELECT
-      id, full_name, email, phone, project_overview,
-      website_url, services, status, ip_address,
-      created_at, updated_at
+      id, full_name, email, phone, designation,
+      project_overview, website_url, status,
+      ip_address, created_at, updated_at
     FROM contacts
     WHERE id = ?
   `;
   const [[row]] = await pool.execute(sql, [id]);
-  if (!row) return null;
-
-  return {
-    ...row,
-    services: row.services
-      ? (typeof row.services === "string" ? JSON.parse(row.services) : row.services)
-      : [],
-  };
+  return row || null;
 };
 
 // ─── Update contact status ────────────────────────────────────────────────────
 
 const updateContactStatus = async (id, status) => {
-  const sql     = `UPDATE contacts SET status = ? WHERE id = ?`;
-  const [result] = await pool.execute(sql, [status, id]);
+  const [result] = await pool.execute(
+    `UPDATE contacts SET status = ? WHERE id = ?`,
+    [status, id]
+  );
   return result.affectedRows > 0;
 };
 
 // ─── Delete a contact ─────────────────────────────────────────────────────────
 
 const deleteContact = async (id) => {
-  const sql     = `DELETE FROM contacts WHERE id = ?`;
-  const [result] = await pool.execute(sql, [id]);
+  const [result] = await pool.execute(
+    `DELETE FROM contacts WHERE id = ?`,
+    [id]
+  );
   return result.affectedRows > 0;
 };
 
