@@ -29,7 +29,7 @@ const testConnection = async () => {
     connection.release();
   } catch (error) {
     console.error("❌ MySQL connection failed:", error.message);
-    process.exit(1);
+    return null; // ❗ FIXED (no crash)
   }
 };
 
