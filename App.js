@@ -1,18 +1,15 @@
-import express from "express";
-import cors    from "cors";
-import helmet  from "helmet";
-import morgan  from "morgan";
-import dotenv  from "dotenv";
+require("dotenv").config();
+const express      = require("express");
+const cors         = require("cors");
+const helmet       = require("helmet");
+const morgan       = require("morgan");
+const { testConnection } = require("./config/db");
+const errorHandler = require("./middleware/errorHandler");
+const contactRoutes = require("./modules/contact/contact.routes");
 
-import { testConnection } from "./config/db.js";
-import errorHandler       from "./middleware/errorHandler.js";
-import contactRoutes      from "./modules/contact/contact.routes.js";
-
-// import razorpayRoutes from "./modules/razorpay/razorpay.routes.js";
-// import paypalRoutes   from "./modules/paypal/paypal.routes.js";
-// import promoRoutes    from "./modules/promo/promo.routes.js";
-
-dotenv.config();
+// const razorpayRoutes = require("./modules/razorpay/razorpay.routes");
+// const paypalRoutes   = require("./modules/paypal/paypal.routes");
+// const promoRoutes    = require("./modules/promo/promo.routes");
 
 const app = express();
 
@@ -21,25 +18,19 @@ const app = express();
 app.use(helmet());
 
 // ─── CORS ───────────────────────────────────────────────────────────────────
-// ✅ FIX: credentials:true cannot be combined with origin:"*"
-//    Use specific origin in production via ALLOWED_ORIGIN env var
 
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "*";
 
-app.use(
-  cors({
-    origin:         allowedOrigin,
-    methods:        ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials:    allowedOrigin !== "*", // ✅ only true when origin is specific
-  })
-);
+app.use(cors({
+  origin:         allowedOrigin,
+  methods:        ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials:    allowedOrigin !== "*",
+}));
 
-// ✅ Handle preflight requests explicitly
 app.options("*", cors());
 
 // ─── Body Parsing ────────────────────────────────────────────────────────────
-// Raw body for webhooks, JSON for everything else
 
 app.use((req, res, next) => {
   if (req.originalUrl.includes("/webhook")) {
@@ -52,11 +43,10 @@ app.use((req, res, next) => {
 app.use(express.urlencoded({ extended: true }));
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
-// Use "combined" in production for more complete logs
 
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
-// ─── DB Connection (NON-BLOCKING) ────────────────────────────────────────────
+// ─── DB Connection ───────────────────────────────────────────────────────────
 
 testConnection()
   .then(() => console.log("✅ DB connected"))
@@ -64,10 +54,10 @@ testConnection()
 
 // ─── Silent Browser Asset Requests ───────────────────────────────────────────
 
-app.get("/favicon.ico",      (req, res) => res.status(204).end());
-app.get("/favicon.png",      (req, res) => res.status(204).end());
-app.get("/apple-touch-icon*",(req, res) => res.status(204).end());
-app.get("/robots.txt",       (req, res) => res.status(204).end());
+app.get("/favicon.ico",       (req, res) => res.status(204).end());
+app.get("/favicon.png",       (req, res) => res.status(204).end());
+app.get("/apple-touch-icon*", (req, res) => res.status(204).end());
+app.get("/robots.txt",        (req, res) => res.status(204).end());
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
@@ -107,4 +97,4 @@ app.use((req, res) => {
 
 app.use(errorHandler);
 
-export default app;
+module.exports = app;

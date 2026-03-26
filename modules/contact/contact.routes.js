@@ -1,35 +1,19 @@
-import { Router } from "express";
-
-import {
-  submitContact,
-  getContacts,
-  getContact,
-  patchContactStatus,
-  removeContact,
-} from "./contact.controller.js";
-
-import validateContact from "../../middleware/validateContact.js";
+const { Router } = require("express");
+const {
+  submitContact, getContacts, getContact,
+  patchContactStatus, removeContact,
+} = require("./contact.controller");
+const validateContact = require("../../middleware/validateContact");
 
 const router = Router();
 
 // ─── Public ───────────────────────────────────────────────────────────────────
-
-// POST /api/contact  — submit lead form
 router.post("/", validateContact, submitContact);
 
-// ─── Admin ────────────────────────────────────────────────────────────────────
-// TODO: add auth middleware before going live
+// ─── Admin (add auth middleware before going live) ────────────────────────────
+router.get("/",              getContacts);
+router.get("/:id",           getContact);
+router.patch("/:id/status",  patchContactStatus);
+router.delete("/:id",        removeContact);
 
-// GET    /api/contact            — list all (paginated, ?page=1&limit=20&status=new)
-router.get("/",         getContacts);
-
-// GET    /api/contact/:id        — single lead
-router.get("/:id",      getContact);
-
-// PATCH  /api/contact/:id/status — update status
-router.patch("/:id/status", patchContactStatus);
-
-// DELETE /api/contact/:id        — delete lead
-router.delete("/:id",   removeContact);
-
-export default router;
+module.exports = router;

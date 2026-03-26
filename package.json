@@ -1,16 +1,14 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "description": "Next.js + MySQL backend with contact form, Razorpay & PayPal integration",
+  "description": "Starway Web Digital API — contact, Razorpay & PayPal",
   "main": "Server.js",
-  "type": "module",
   "scripts": {
     "start": "node Server.js",
     "dev": "nodemon Server.js",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "dependencies": {
-    "@paypal/checkout-server-sdk": "^1.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
