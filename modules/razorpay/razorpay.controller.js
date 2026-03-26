@@ -1,291 +1,269 @@
-// import crypto    from "crypto";
-// import Razorpay  from "razorpay";
-// import {
-//   calculateAmountWithTax,
-//   createOrder,
-//   updateOrderAfterPayment,
-//   getOrderByRazorpayId,
-//   getAllOrders,
-//   TAX_RATE,
-// } from "./razorpay.model.js";
+const crypto   = require("crypto");
+const Razorpay = require("razorpay");
+const {
+  TAX_RATE,
+  calculateAmountWithTax,
+  createOrder,
+  updateOrderAfterPayment,
+  getOrderByRazorpayId,
+  getAllOrders,
+} = require("./razorpay.model");
 
-// // ─── Supported currencies ─────────────────────────────────────────────────────
-// // NZD is NOT supported by Razorpay international — excluded here
+// ─── Supported currencies ─────────────────────────────────────────────────────
+// NZD is NOT supported by Razorpay international — excluded
 
-// const SUPPORTED_CURRENCIES = ["INR", "USD", "AUD", "CAD", "EUR", "GBP"];
+const SUPPORTED_CURRENCIES = ["INR", "USD", "AUD", "CAD", "EUR", "GBP"];
 
-// // ─── Validate keys on startup ─────────────────────────────────────────────────
+const KEY_ID     = process.env.RAZORPAY_KEY_ID;
+const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 
-// const KEY_ID     = process.env.RAZORPAY_KEY_ID;
-// const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
+if (!KEY_ID || !KEY_SECRET) {
+  console.warn(
+    "⚠️  RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET missing in .env\n" +
+    "   Get keys: https://dashboard.razorpay.com/app/keys"
+  );
+}
 
-// if (!KEY_ID || !KEY_SECRET) {
-//   console.error(
-//     "❌  RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing in .env\n" +
-//     "    Get keys from: https://dashboard.razorpay.com/app/keys\n" +
-//     "    Test keys start with rzp_test_"
-//   );
-// }
+const razorpay = new Razorpay({ key_id: KEY_ID, key_secret: KEY_SECRET });
 
-// const razorpay = new Razorpay({ key_id: KEY_ID, key_secret: KEY_SECRET });
+// ─── POST /api/razorpay/calculate-tax ────────────────────────────────────────
 
-// // ─── POST /api/razorpay/calculate-tax ────────────────────────────────────────
+const calculateTax = (req, res) => {
+  const baseAmount = parseFloat(req.body.amount);
+  const currency   = (req.body.currency || "INR").toUpperCase();
 
-// const calculateTax = (req, res) => {
-//   const baseAmount = parseFloat(req.body.amount);
-//   const currency   = (req.body.currency || "INR").toUpperCase();
+  if (!baseAmount || isNaN(baseAmount) || baseAmount <= 0) {
+    return res.status(400).json({ success: false, message: "amount must be a positive number" });
+  }
+  if (!SUPPORTED_CURRENCIES.includes(currency)) {
+    return res.status(400).json({
+      success: false,
+      message: `Currency ${currency} not supported. Supported: ${SUPPORTED_CURRENCIES.join(", ")}`,
+    });
+  }
 
-//   if (!baseAmount || isNaN(baseAmount) || baseAmount <= 0) {
-//     return res.status(400).json({ success: false, message: "amount must be a positive number" });
-//   }
+  const { base, tax, total } = calculateAmountWithTax(baseAmount);
 
-//   if (!SUPPORTED_CURRENCIES.includes(currency)) {
-//     return res.status(400).json({
-//       success: false,
-//       message: `Currency ${currency} is not supported by Razorpay. Supported: ${SUPPORTED_CURRENCIES.join(", ")}`,
-//     });
-//   }
+  res.status(200).json({
+    success: true,
+    data: {
+      base_amount:  base,
+      tax_rate:     `${TAX_RATE * 100}%`,
+      tax_amount:   tax,
+      total_amount: total,
+      currency,
+    },
+  });
+};
 
-//   const { base, tax, total } = calculateAmountWithTax(baseAmount);
+// ─── POST /api/razorpay/create-order ─────────────────────────────────────────
 
-//   res.status(200).json({
-//     success: true,
-//     data: {
-//       base_amount:  base,
-//       tax_rate:     `${TAX_RATE * 100}%`,
-//       tax_amount:   tax,
-//       total_amount: total,
-//       currency,
-//       note: `${TAX_RATE * 100}% tax applied`,
-//     },
-//   });
-// };
+const createRazorpayOrder = async (req, res, next) => {
+  try {
+    if (!KEY_ID || !KEY_SECRET) {
+      return res.status(500).json({
+        success: false,
+        message: "Razorpay keys not configured. Check your .env file.",
+      });
+    }
 
-// // ─── POST /api/razorpay/create-order ─────────────────────────────────────────
+    const {
+      amount,
+      currency       = "INR",
+      customer_name  = "",
+      customer_email = "",
+      customer_phone = "",
+      notes          = {},
+    } = req.body;
 
-// const createRazorpayOrder = async (req, res, next) => {
-//   try {
-//     if (!KEY_ID || !KEY_SECRET) {
-//       return res.status(500).json({
-//         success: false,
-//         message: "Razorpay keys are not configured. Check your .env file.",
-//       });
-//     }
+    const selectedCurrency = currency.toUpperCase();
 
-//     const {
-//       amount,
-//       currency       = "INR",
-//       customer_name  = "",
-//       customer_email = "",
-//       customer_phone = "",
-//       notes          = {},
-//     } = req.body;
+    if (!SUPPORTED_CURRENCIES.includes(selectedCurrency)) {
+      return res.status(400).json({
+        success: false,
+        message: `Currency ${selectedCurrency} not supported. Supported: ${SUPPORTED_CURRENCIES.join(", ")}`,
+      });
+    }
 
-//     const selectedCurrency = currency.toUpperCase();
+    const baseAmount = parseFloat(amount);
+    if (!baseAmount || isNaN(baseAmount) || baseAmount <= 0) {
+      return res.status(400).json({ success: false, message: "amount must be a positive number" });
+    }
 
-//     // ── Validate currency ─────────────────────────────────────────────────
-//     if (!SUPPORTED_CURRENCIES.includes(selectedCurrency)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Currency ${selectedCurrency} is not supported by Razorpay. Supported: ${SUPPORTED_CURRENCIES.join(", ")}`,
-//       });
-//     }
+    const { base, tax, total, totalPaise } = calculateAmountWithTax(baseAmount);
 
-//     // ── Validate amount ───────────────────────────────────────────────────
-//     const baseAmount = parseFloat(amount);
-//     if (!baseAmount || isNaN(baseAmount) || baseAmount <= 0) {
-//       return res.status(400).json({ success: false, message: "amount must be a positive number" });
-//     }
+    console.log(`💰 Razorpay order — ${selectedCurrency} Base:${base} Tax:${tax} Total:${total} Paise:${totalPaise}`);
 
-//     // ── Calculate 5% tax ──────────────────────────────────────────────────
-//     const { base, tax, total, totalPaise } = calculateAmountWithTax(baseAmount);
+    const receipt = `rcpt_${Date.now()}`;
 
-//     console.log(`💰 Razorpay order — ${selectedCurrency} Base: ${base}  Tax: ${tax}  Total: ${total}  Paise: ${totalPaise}`);
+    const razorpayOrder = await razorpay.orders.create({
+      amount:   totalPaise,
+      currency: selectedCurrency,
+      receipt,
+      notes: {
+        ...notes,
+        base_amount:    base.toString(),
+        tax_amount:     tax.toString(),
+        tax_rate:       `${TAX_RATE * 100}%`,
+        currency:       selectedCurrency,
+        customer_name,
+        customer_email,
+      },
+    });
 
-//     const receipt = `rcpt_${Date.now()}`;
+    console.log(`✅ Razorpay order created: ${razorpayOrder.id}`);
 
-//     // ── Create Razorpay order ─────────────────────────────────────────────
-//     const razorpayOrder = await razorpay.orders.create({
-//       amount:   totalPaise,
-//       currency: selectedCurrency,
-//       receipt,
-//       notes: {
-//         ...notes,
-//         base_amount:    base.toString(),
-//         tax_amount:     tax.toString(),
-//         tax_rate:       `${TAX_RATE * 100}%`,
-//         currency:       selectedCurrency,
-//         customer_name,
-//         customer_email,
-//       },
-//     });
+    await createOrder({
+      razorpay_order_id: razorpayOrder.id,
+      amount:            total,
+      currency:          selectedCurrency,
+      receipt,
+      customer_name,
+      customer_email,
+      customer_phone,
+      notes: { ...notes, base_amount: base, tax_amount: tax, tax_rate: TAX_RATE },
+    });
 
-//     console.log(`✅ Razorpay order created: ${razorpayOrder.id} (${selectedCurrency})`);
+    res.status(201).json({
+      success: true,
+      message: "Order created successfully",
+      data: {
+        order_id:  razorpayOrder.id,
+        amount:    razorpayOrder.amount,
+        currency:  razorpayOrder.currency,
+        key_id:    KEY_ID,
+        breakdown: { base_amount: base, tax_rate: `${TAX_RATE * 100}%`, tax_amount: tax, total_amount: total, currency: selectedCurrency },
+        prefill:   { name: customer_name, email: customer_email, contact: customer_phone },
+      },
+    });
+  } catch (error) {
+    if (error.error) {
+      console.error("❌ Razorpay API Error:", JSON.stringify(error.error));
+      return res.status(502).json({
+        success:         false,
+        message:         error.error.description || "Razorpay API error",
+        razorpay_code:   error.error.code,
+        razorpay_reason: error.error.reason,
+      });
+    }
+    if (error.statusCode === 401 || error.message?.toLowerCase().includes("unauthorized")) {
+      return res.status(502).json({ success: false, message: "Razorpay authentication failed — check API keys" });
+    }
+    next(error);
+  }
+};
 
-//     // ── Save to DB ────────────────────────────────────────────────────────
-//     await createOrder({
-//       razorpay_order_id: razorpayOrder.id,
-//       amount:            total,
-//       currency:          selectedCurrency,
-//       receipt,
-//       customer_name,
-//       customer_email,
-//       customer_phone,
-//       notes: { ...notes, base_amount: base, tax_amount: tax, tax_rate: TAX_RATE },
-//     });
+// ─── POST /api/razorpay/verify-payment ───────────────────────────────────────
 
-//     res.status(201).json({
-//       success: true,
-//       message: "Order created successfully",
-//       data: {
-//         order_id:  razorpayOrder.id,
-//         amount:    razorpayOrder.amount,
-//         currency:  razorpayOrder.currency,
-//         key_id:    KEY_ID,
-//         breakdown: {
-//           base_amount:  base,
-//           tax_rate:     `${TAX_RATE * 100}%`,
-//           tax_amount:   tax,
-//           total_amount: total,
-//           currency:     selectedCurrency,
-//         },
-//         prefill: {
-//           name:    customer_name,
-//           email:   customer_email,
-//           contact: customer_phone,
-//         },
-//       },
-//     });
+const verifyPayment = async (req, res, next) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-//   } catch (error) {
-//     if (error.error) {
-//       console.error("❌ Razorpay API Error:", JSON.stringify(error.error, null, 2));
-//       return res.status(502).json({
-//         success:         false,
-//         message:         error.error.description || "Razorpay API error",
-//         razorpay_code:   error.error.code,
-//         razorpay_reason: error.error.reason,
-//       });
-//     }
-//     if (error.statusCode === 401 || error.message?.toLowerCase().includes("unauthorized")) {
-//       console.error("❌ Razorpay 401 — check RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET in .env");
-//       return res.status(502).json({
-//         success: false,
-//         message: "Razorpay authentication failed — your API keys are invalid or missing",
-//       });
-//     }
-//     console.error("❌ Unexpected error in createRazorpayOrder:", error);
-//     next(error);
-//   }
-// };
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({
+        success: false,
+        message: "razorpay_order_id, razorpay_payment_id and razorpay_signature are required",
+      });
+    }
 
-// // ─── POST /api/razorpay/verify-payment ───────────────────────────────────────
+    const expectedSignature = crypto
+      .createHmac("sha256", KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
 
-// const verifyPayment = async (req, res, next) => {
-//   try {
-//     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(expectedSignature, "hex"),
+      Buffer.from(razorpay_signature, "hex")
+    );
 
-//     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "razorpay_order_id, razorpay_payment_id and razorpay_signature are required",
-//       });
-//     }
+    if (!isValid) {
+      await updateOrderAfterPayment({ razorpay_order_id, razorpay_payment_id, razorpay_signature, status: "failed" });
+      return res.status(400).json({ success: false, message: "Payment verification failed — invalid signature" });
+    }
 
-//     const expectedSignature = crypto
-//       .createHmac("sha256", KEY_SECRET)
-//       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-//       .digest("hex");
+    await updateOrderAfterPayment({ razorpay_order_id, razorpay_payment_id, razorpay_signature, status: "paid" });
 
-//     const isValid = crypto.timingSafeEqual(
-//       Buffer.from(expectedSignature, "hex"),
-//       Buffer.from(razorpay_signature,  "hex")
-//     );
+    const order = await getOrderByRazorpayId(razorpay_order_id);
 
-//     if (!isValid) {
-//       await updateOrderAfterPayment({ razorpay_order_id, razorpay_payment_id, razorpay_signature, status: "failed" });
-//       return res.status(400).json({ success: false, message: "Payment verification failed — invalid signature" });
-//     }
+    res.status(200).json({
+      success: true,
+      message: "Payment verified successfully",
+      data: {
+        order_id:   razorpay_order_id,
+        payment_id: razorpay_payment_id,
+        amount:     order?.amount,
+        currency:   order?.currency,
+        status:     "paid",
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
-//     await updateOrderAfterPayment({ razorpay_order_id, razorpay_payment_id, razorpay_signature, status: "paid" });
+// ─── POST /api/razorpay/webhook ───────────────────────────────────────────────
 
-//     const order = await getOrderByRazorpayId(razorpay_order_id);
+const handleWebhook = async (req, res, next) => {
+  try {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const receivedSig   = req.headers["x-razorpay-signature"];
+    const rawBody       = req.body;
 
-//     res.status(200).json({
-//       success: true,
-//       message: "Payment verified successfully",
-//       data: {
-//         order_id:   razorpay_order_id,
-//         payment_id: razorpay_payment_id,
-//         amount:     order?.amount,
-//         currency:   order?.currency,
-//         status:     "paid",
-//       },
-//     });
-//   } catch (error) {
-//     next(error);
-//   }
-// };
+    const expectedSig = crypto.createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
 
-// // ─── POST /api/razorpay/webhook ───────────────────────────────────────────────
+    if (!receivedSig || !crypto.timingSafeEqual(
+      Buffer.from(expectedSig, "utf8"),
+      Buffer.from(receivedSig, "utf8")
+    )) {
+      return res.status(400).json({ success: false, message: "Invalid webhook signature" });
+    }
 
-// const handleWebhook = async (req, res, next) => {
-//   try {
-//     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-//     const receivedSig   = req.headers["x-razorpay-signature"];
-//     const rawBody       = req.body;
+    const event   = JSON.parse(rawBody.toString());
+    const payload = event?.payload?.payment?.entity;
+    console.log(`📦 Razorpay webhook: ${event.event}`);
 
-//     const expectedSig = crypto.createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
+    switch (event.event) {
+      case "payment.captured":
+        await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.id, razorpay_signature: null, status: "paid" });
+        break;
+      case "payment.failed":
+        await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.id, razorpay_signature: null, status: "failed" });
+        break;
+      case "refund.created":
+        await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.payment_id, razorpay_signature: null, status: "refunded" });
+        break;
+      default:
+        console.log(`ℹ️  Unhandled webhook: ${event.event}`);
+    }
 
-//     if (!receivedSig || !crypto.timingSafeEqual(
-//       Buffer.from(expectedSig, "utf8"),
-//       Buffer.from(receivedSig, "utf8")
-//     )) {
-//       return res.status(400).json({ success: false, message: "Invalid webhook signature" });
-//     }
+    res.status(200).json({ received: true });
+  } catch (error) {
+    next(error);
+  }
+};
 
-//     const event   = JSON.parse(rawBody.toString());
-//     const payload = event?.payload?.payment?.entity;
-//     console.log(`📦 Razorpay webhook: ${event.event}`);
+// ─── GET /api/razorpay/orders ─────────────────────────────────────────────────
 
-//     switch (event.event) {
-//       case "payment.captured":
-//         await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.id, razorpay_signature: null, status: "paid" });
-//         break;
-//       case "payment.failed":
-//         await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.id, razorpay_signature: null, status: "failed" });
-//         break;
-//       case "refund.created":
-//         await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.payment_id, razorpay_signature: null, status: "refunded" });
-//         break;
-//       default:
-//         console.log(`ℹ️  Unhandled webhook event: ${event.event}`);
-//     }
+const getOrders = async (req, res, next) => {
+  try {
+    const page   = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit  = Math.min(100, parseInt(req.query.limit) || 20);
+    const status = req.query.status || undefined;
 
-//     res.status(200).json({ received: true });
-//   } catch (error) {
-//     next(error);
-//   }
-// };
+    const validStatuses = ["created", "paid", "failed", "refunded"];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+    }
 
-// // ─── GET /api/razorpay/orders ─────────────────────────────────────────────────
+    const { rows, total } = await getAllOrders({ page, limit, status });
+    res.status(200).json({
+      success: true,
+      data:    rows,
+      meta:    { total, page, limit, totalPages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
-// const getOrders = async (req, res, next) => {
-//   try {
-//     const page   = Math.max(1, parseInt(req.query.page)  || 1);
-//     const limit  = Math.min(100, parseInt(req.query.limit) || 20);
-//     const status = req.query.status || undefined;
-
-//     const validStatuses = ["created", "paid", "failed", "refunded"];
-//     if (status && !validStatuses.includes(status)) {
-//       return res.status(400).json({ success: false, message: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
-//     }
-
-//     const { rows, total } = await getAllOrders({ page, limit, status });
-//     res.status(200).json({ success: true, data: rows, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-//   } catch (error) {
-//     next(error);
-//   }
-// };
-
-// export { calculateTax, createRazorpayOrder, verifyPayment, handleWebhook, getOrders };
+module.exports = { calculateTax, createRazorpayOrder, verifyPayment, handleWebhook, getOrders };
