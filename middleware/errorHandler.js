@@ -4,32 +4,56 @@
  */
 const errorHandler = (err, req, res, next) => {
   let statusCode = err.statusCode || 500;
-  let message = err.message || "Internal Server Error";
+  let message    = err.message    || "Internal Server Error";
 
-  // MySQL duplicate entry
+  // ─── MySQL Errors ──────────────────────────────────────────────────────────
+
+  // Duplicate entry
   if (err.code === "ER_DUP_ENTRY") {
     statusCode = 409;
-    message = "Duplicate entry — resource already exists";
+    message    = "Duplicate entry — resource already exists";
   }
 
-  // MySQL bad field / table
+  // Schema issues
   if (err.code === "ER_NO_SUCH_TABLE" || err.code === "ER_BAD_FIELD_ERROR") {
     statusCode = 500;
-    message = "Database schema error";
+    message    = "Database schema error";
   }
 
-  // JSON parse error
+  // ✅ Connection lost / timeout — common on Hostinger shared DB
+  if (
+    err.code === "ECONNREFUSED"    ||
+    err.code === "ETIMEDOUT"       ||
+    err.code === "PROTOCOL_CONNECTION_LOST" ||
+    err.code === "ER_CON_COUNT_ERROR"
+  ) {
+    statusCode = 503;
+    message    = "Database temporarily unavailable. Please try again.";
+  }
+
+  // ─── Express / HTTP Errors ─────────────────────────────────────────────────
+
+  // Bad JSON body
   if (err.type === "entity.parse.failed") {
     statusCode = 400;
-    message = "Invalid JSON in request body";
+    message    = "Invalid JSON in request body";
   }
 
-  // Log full error in development
+  // Payload too large
+  if (err.type === "entity.too.large") {
+    statusCode = 413;
+    message    = "Request body too large";
+  }
+
+  // ─── Logging ───────────────────────────────────────────────────────────────
+
   if (process.env.NODE_ENV === "development") {
     console.error("🔴 Error:", err);
   } else {
-    console.error(`🔴 [${statusCode}] ${message}`);
+    console.error(`🔴 [${statusCode}] ${req.method} ${req.originalUrl} → ${message}`);
   }
+
+  // ─── Response ──────────────────────────────────────────────────────────────
 
   res.status(statusCode).json({
     success: false,

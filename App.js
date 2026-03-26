@@ -1,35 +1,46 @@
 import express from "express";
-import cors from "cors";
-import helmet from "helmet";
-import morgan from "morgan";
-import dotenv from "dotenv";
+import cors    from "cors";
+import helmet  from "helmet";
+import morgan  from "morgan";
+import dotenv  from "dotenv";
 
 import { testConnection } from "./config/db.js";
-import errorHandler from "./middleware/errorHandler.js";
+import errorHandler       from "./middleware/errorHandler.js";
+import contactRoutes      from "./modules/contact/contact.routes.js";
 
-import contactRoutes from "./modules/contact/contact.routes.js";
 // import razorpayRoutes from "./modules/razorpay/razorpay.routes.js";
-// import paypalRoutes from "./modules/paypal/paypal.routes.js";
-// import promoRoutes from "./modules/promo/promo.routes.js";
+// import paypalRoutes   from "./modules/paypal/paypal.routes.js";
+// import promoRoutes    from "./modules/promo/promo.routes.js";
 
 dotenv.config();
 
 const app = express();
 
-// ─── Middleware ─────────────────────────────────────────
+// ─── Security ───────────────────────────────────────────────────────────────
 
 app.use(helmet());
 
+// ─── CORS ───────────────────────────────────────────────────────────────────
+// ✅ FIX: credentials:true cannot be combined with origin:"*"
+//    Use specific origin in production via ALLOWED_ORIGIN env var
+
+const allowedOrigin = process.env.ALLOWED_ORIGIN || "*";
+
 app.use(
   cors({
-    origin: "*", // ❗ FIXED (avoid CORS issues)
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    origin:         allowedOrigin,
+    methods:        ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
+    credentials:    allowedOrigin !== "*", // ✅ only true when origin is specific
   })
 );
 
-// Raw body for webhook
+// ✅ Handle preflight requests explicitly
+app.options("*", cors());
+
+// ─── Body Parsing ────────────────────────────────────────────────────────────
+// Raw body for webhooks, JSON for everything else
+
 app.use((req, res, next) => {
   if (req.originalUrl.includes("/webhook")) {
     express.raw({ type: "application/json" })(req, res, next);
@@ -40,55 +51,59 @@ app.use((req, res, next) => {
 
 app.use(express.urlencoded({ extended: true }));
 
-app.use(morgan("dev"));
+// ─── Logging ─────────────────────────────────────────────────────────────────
+// Use "combined" in production for more complete logs
 
-// ─── DB Connection (NON-BLOCKING) ───────────────────────
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+
+// ─── DB Connection (NON-BLOCKING) ────────────────────────────────────────────
 
 testConnection()
   .then(() => console.log("✅ DB connected"))
-  .catch((err) => console.error("❌ DB failed:", err.message));
+  .catch((err) => console.error("❌ DB connection error:", err.message));
 
-// ─── Silent browser requests ────────────────────────────
+// ─── Silent Browser Asset Requests ───────────────────────────────────────────
 
-app.get("/favicon.ico", (req, res) => res.status(204).end());
-app.get("/favicon.png", (req, res) => res.status(204).end());
-app.get("/apple-touch-icon*", (req, res) => res.status(204).end());
-app.get("/robots.txt", (req, res) => res.status(204).end());
+app.get("/favicon.ico",      (req, res) => res.status(204).end());
+app.get("/favicon.png",      (req, res) => res.status(204).end());
+app.get("/apple-touch-icon*",(req, res) => res.status(204).end());
+app.get("/robots.txt",       (req, res) => res.status(204).end());
 
-// ─── Routes ─────────────────────────────────────────────
+// ─── Routes ──────────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
   res.status(200).json({
-    success: true,
-    message: "Starway Web Digital API 🚀",
-    version: "1.0.0",
+    success:     true,
+    message:     "Starway Web Digital API 🚀",
+    version:     "1.0.0",
     environment: process.env.NODE_ENV || "development",
+  });
+});
+
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    success:   true,
+    message:   "Server is up and running 🟢",
+    timestamp: new Date().toISOString(),
+    uptime:    `${Math.floor(process.uptime())}s`,
   });
 });
 
 app.use("/api/contact", contactRoutes);
 // app.use("/api/razorpay", razorpayRoutes);
-// app.use("/api/paypal", paypalRoutes);
-// app.use("/api/promo", promoRoutes);
+// app.use("/api/paypal",   paypalRoutes);
+// app.use("/api/promo",    promoRoutes);
 
-app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "Server is up and running 🟢",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// ─── 404 ───────────────────────────────────────────────
+// ─── 404 ─────────────────────────────────────────────────────────────────────
 
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route ${req.originalUrl} not found`,
+    message: `Route ${req.method} ${req.originalUrl} not found`,
   });
 });
 
-// ─── Error Handler ─────────────────────────────────────
+// ─── Global Error Handler ────────────────────────────────────────────────────
 
 app.use(errorHandler);
 
