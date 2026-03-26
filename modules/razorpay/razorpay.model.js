@@ -1,135 +1,135 @@
-import { pool } from "../../config/db.js";
+// import { pool } from "../../config/db.js";
 
-// ─── Tax Config ───────────────────────────────────────────────────────────────
+// // ─── Tax Config ───────────────────────────────────────────────────────────────
 
-export const TAX_RATE = 0.05; // 5%
+// export const TAX_RATE = 0.05; // 5%
 
-/**
- * Calculate base amount, tax, and total.
- * Razorpay works in PAISE (1 INR = 100 paise) — always integers.
- *
- * @param {number} baseAmountInRupees  — the amount BEFORE tax (e.g. 1000)
- * @returns {{ base, tax, total, totalPaise }}
- */
-export const calculateAmountWithTax = (baseAmountInRupees) => {
-  const base  = parseFloat(baseAmountInRupees.toFixed(2));
-  const tax   = parseFloat((base * TAX_RATE).toFixed(2));
-  const total = parseFloat((base + tax).toFixed(2));
+// /**
+//  * Calculate base amount, tax, and total.
+//  * Razorpay works in PAISE (1 INR = 100 paise) — always integers.
+//  *
+//  * @param {number} baseAmountInRupees  — the amount BEFORE tax (e.g. 1000)
+//  * @returns {{ base, tax, total, totalPaise }}
+//  */
+// export const calculateAmountWithTax = (baseAmountInRupees) => {
+//   const base  = parseFloat(baseAmountInRupees.toFixed(2));
+//   const tax   = parseFloat((base * TAX_RATE).toFixed(2));
+//   const total = parseFloat((base + tax).toFixed(2));
 
-  return {
-    base,
-    tax,
-    total,
-    totalPaise: Math.round(total * 100), // Razorpay needs integer paise
-  };
-};
+//   return {
+//     base,
+//     tax,
+//     total,
+//     totalPaise: Math.round(total * 100), // Razorpay needs integer paise
+//   };
+// };
 
-// ─── Create Order Record ──────────────────────────────────────────────────────
+// // ─── Create Order Record ──────────────────────────────────────────────────────
 
-const createOrder = async ({
-  razorpay_order_id,
-  amount,        // total after tax (in INR)
-  currency,
-  receipt,
-  customer_name,
-  customer_email,
-  customer_phone,
-  notes,
-}) => {
-  const sql = `
-    INSERT INTO razorpay_orders
-      (razorpay_order_id, amount, currency, receipt,
-       customer_name, customer_email, customer_phone, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `;
+// const createOrder = async ({
+//   razorpay_order_id,
+//   amount,        // total after tax (in INR)
+//   currency,
+//   receipt,
+//   customer_name,
+//   customer_email,
+//   customer_phone,
+//   notes,
+// }) => {
+//   const sql = `
+//     INSERT INTO razorpay_orders
+//       (razorpay_order_id, amount, currency, receipt,
+//        customer_name, customer_email, customer_phone, notes)
+//     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+//   `;
 
-  const [result] = await pool.execute(sql, [
-    razorpay_order_id,
-    amount,
-    currency      || "INR",
-    receipt       || null,
-    customer_name || null,
-    customer_email|| null,
-    customer_phone|| null,
-    notes         ? JSON.stringify(notes) : null,
-  ]);
+//   const [result] = await pool.execute(sql, [
+//     razorpay_order_id,
+//     amount,
+//     currency      || "INR",
+//     receipt       || null,
+//     customer_name || null,
+//     customer_email|| null,
+//     customer_phone|| null,
+//     notes         ? JSON.stringify(notes) : null,
+//   ]);
 
-  return result.insertId;
-};
+//   return result.insertId;
+// };
 
-// ─── Update Order After Payment ───────────────────────────────────────────────
+// // ─── Update Order After Payment ───────────────────────────────────────────────
 
-const updateOrderAfterPayment = async ({
-  razorpay_order_id,
-  razorpay_payment_id,
-  razorpay_signature,
-  status,
-}) => {
-  const sql = `
-    UPDATE razorpay_orders
-    SET razorpay_payment_id = ?,
-        razorpay_signature  = ?,
-        status              = ?
-    WHERE razorpay_order_id = ?
-  `;
+// const updateOrderAfterPayment = async ({
+//   razorpay_order_id,
+//   razorpay_payment_id,
+//   razorpay_signature,
+//   status,
+// }) => {
+//   const sql = `
+//     UPDATE razorpay_orders
+//     SET razorpay_payment_id = ?,
+//         razorpay_signature  = ?,
+//         status              = ?
+//     WHERE razorpay_order_id = ?
+//   `;
 
-  const [result] = await pool.execute(sql, [
-    razorpay_payment_id,
-    razorpay_signature,
-    status,
-    razorpay_order_id,
-  ]);
+//   const [result] = await pool.execute(sql, [
+//     razorpay_payment_id,
+//     razorpay_signature,
+//     status,
+//     razorpay_order_id,
+//   ]);
 
-  return result.affectedRows > 0;
-};
+//   return result.affectedRows > 0;
+// };
 
-// ─── Get Order by Razorpay Order ID ──────────────────────────────────────────
+// // ─── Get Order by Razorpay Order ID ──────────────────────────────────────────
 
-const getOrderByRazorpayId = async (razorpay_order_id) => {
-  const sql = `
-    SELECT * FROM razorpay_orders WHERE razorpay_order_id = ?
-  `;
-  const [[row]] = await pool.execute(sql, [razorpay_order_id]);
-  return row || null;
-};
+// const getOrderByRazorpayId = async (razorpay_order_id) => {
+//   const sql = `
+//     SELECT * FROM razorpay_orders WHERE razorpay_order_id = ?
+//   `;
+//   const [[row]] = await pool.execute(sql, [razorpay_order_id]);
+//   return row || null;
+// };
 
-// ─── Get All Orders (admin) ───────────────────────────────────────────────────
+// // ─── Get All Orders (admin) ───────────────────────────────────────────────────
 
-const getAllOrders = async ({ page = 1, limit = 20, status } = {}) => {
-  const offset = (page - 1) * limit;
+// const getAllOrders = async ({ page = 1, limit = 20, status } = {}) => {
+//   const offset = (page - 1) * limit;
 
-  let whereClause = "";
-  const countParams = [];
-  const dataParams  = [];
+//   let whereClause = "";
+//   const countParams = [];
+//   const dataParams  = [];
 
-  if (status) {
-    whereClause = "WHERE status = ?";
-    countParams.push(status);
-    dataParams.push(status);
-  }
+//   if (status) {
+//     whereClause = "WHERE status = ?";
+//     countParams.push(status);
+//     dataParams.push(status);
+//   }
 
-  dataParams.push(limit, offset);
+//   dataParams.push(limit, offset);
 
-  const dataSql = `
-    SELECT * FROM razorpay_orders
-    ${whereClause}
-    ORDER BY created_at DESC
-    LIMIT ? OFFSET ?
-  `;
+//   const dataSql = `
+//     SELECT * FROM razorpay_orders
+//     ${whereClause}
+//     ORDER BY created_at DESC
+//     LIMIT ? OFFSET ?
+//   `;
 
-  const countSql = `SELECT COUNT(*) AS total FROM razorpay_orders ${whereClause}`;
+//   const countSql = `SELECT COUNT(*) AS total FROM razorpay_orders ${whereClause}`;
 
-  const [[rows], [[{ total }]]] = await Promise.all([
-    pool.execute(dataSql,  dataParams),
-    pool.execute(countSql, countParams),
-  ]);
+//   const [[rows], [[{ total }]]] = await Promise.all([
+//     pool.execute(dataSql,  dataParams),
+//     pool.execute(countSql, countParams),
+//   ]);
 
-  return { rows, total: Number(total) };
-};
+//   return { rows, total: Number(total) };
+// };
 
-export {
-  createOrder,
-  updateOrderAfterPayment,
-  getOrderByRazorpayId,
-  getAllOrders,
-};
+// export {
+//   createOrder,
+//   updateOrderAfterPayment,
+//   getOrderByRazorpayId,
+//   getAllOrders,
+// };
