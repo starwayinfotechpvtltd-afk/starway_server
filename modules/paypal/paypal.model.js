@@ -2,7 +2,7 @@ const { pool } = require("../../config/db");
 
 // ─── Tax Config ───────────────────────────────────────────────────────────────
 
-const TAX_RATE = 0.05; // 5% — mirrors Razorpay
+const TAX_RATE = 0.05;
 
 const calculateAmountWithTax = (baseAmount) => {
   const base  = parseFloat(parseFloat(baseAmount).toFixed(2));
