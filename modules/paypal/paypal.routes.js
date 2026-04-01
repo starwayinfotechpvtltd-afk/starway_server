@@ -1,39 +1,31 @@
-// import { Router } from "express";
-// import {
-//   calculateTax,
-//   createOrder,
-//   captureOrder,
-//   handleWebhook,
-//   getOrders,
-// } from "./paypal.controller.js";
+const { Router } = require("express");
+const {
+  calculateTax,
+  createOrder,
+  captureOrder,
+  handleWebhook,
+  getOrders,
+} = require("./paypal.controller");
 
-// const router = Router();
+const router = Router();
 
-// // ─── Public Routes ────────────────────────────────────────────────────────────
+// ─── Public ───────────────────────────────────────────────────────────────────
 
-// // POST /api/paypal/calculate-tax
-// // Body: { amount: 100, currency: "USD" }
-// // Returns live tax breakdown before checkout
-// router.post("/calculate-tax", calculateTax);
+// POST /api/paypal/calculate-tax   — { amount, currency? }
+router.post("/calculate-tax",  calculateTax);
 
-// // POST /api/paypal/create-order
-// // Body: { amount, currency?, description?, customer_name?, customer_email? }
-// // Creates PayPal order with 5% tax as separate line item
-// router.post("/create-order", createOrder);
+// POST /api/paypal/create-order    — { amount, currency?, description?, promo_code?, customer_name?, customer_email? }
+router.post("/create-order",   createOrder);
 
-// // POST /api/paypal/capture-order
-// // Body: { order_id }
-// // Called after user approves on PayPal — captures the payment
-// router.post("/capture-order", captureOrder);
+// POST /api/paypal/capture-order   — { order_id }
+router.post("/capture-order",  captureOrder);
 
-// // POST /api/paypal/webhook
-// // PayPal server-to-server event notifications (raw body)
-// router.post("/webhook", handleWebhook);
+// POST /api/paypal/webhook         — raw body (PayPal server-to-server)
+router.post("/webhook",        handleWebhook);
 
-// // ─── Admin Routes ─────────────────────────────────────────────────────────────
-// // TODO: protect with auth middleware before going live
+// ─── Admin ────────────────────────────────────────────────────────────────────
 
-// // GET /api/paypal/orders?page=1&limit=20&status=captured
-// router.get("/orders", getOrders);
+// GET /api/paypal/orders?page=1&limit=20&status=captured
+router.get("/orders", getOrders);
 
-// export default router;
+module.exports = router;

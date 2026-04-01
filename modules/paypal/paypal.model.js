@@ -1,107 +1,105 @@
-// import { pool } from "../../config/db.js";
+const { pool } = require("../../config/db");
 
-// // ─── Tax Config (mirrors Razorpay — same 5% rate) ─────────────────────────────
+// ─── Tax Config ───────────────────────────────────────────────────────────────
 
-// export const TAX_RATE = 0.05;
+const TAX_RATE = 0.05; // 5% — mirrors Razorpay
 
-// /**
-//  * Calculate base, tax, and total for PayPal.
-//  * PayPal uses decimal amounts (e.g. "10.50") — NOT paise.
-//  *
-//  * @param {number} baseAmountInUSD
-//  * @returns {{ base, tax, total }}
-//  */
-// export const calculateAmountWithTax = (baseAmount) => {
-//   const base  = parseFloat(parseFloat(baseAmount).toFixed(2));
-//   const tax   = parseFloat((base * TAX_RATE).toFixed(2));
-//   const total = parseFloat((base + tax).toFixed(2));
-//   return { base, tax, total };
-// };
+const calculateAmountWithTax = (baseAmount) => {
+  const base  = parseFloat(parseFloat(baseAmount).toFixed(2));
+  const tax   = parseFloat((base * TAX_RATE).toFixed(2));
+  const total = parseFloat((base + tax).toFixed(2));
+  return { base, tax, total };
+};
 
-// // ─── Create a PayPal order record ────────────────────────────────────────────
+// ─── Create PayPal Order Record ───────────────────────────────────────────────
 
-// const createPaypalOrder = async ({
-//   paypal_order_id,
-//   amount,
-//   currency,
-//   description,
-//   customer_name,
-//   customer_email,
-// }) => {
-//   const sql = `
-//     INSERT INTO paypal_orders
-//       (paypal_order_id, amount, currency, description, customer_name, customer_email)
-//     VALUES (?, ?, ?, ?, ?, ?)
-//   `;
-//   const [result] = await pool.execute(sql, [
-//     paypal_order_id,
-//     amount,
-//     currency       || "USD",
-//     description    || null,
-//     customer_name  || null,
-//     customer_email || null,
-//   ]);
-//   return result.insertId;
-// };
+const createPaypalOrder = async ({
+  paypal_order_id,
+  amount,
+  currency,
+  description,
+  customer_name,
+  customer_email,
+  promo_code      = null,   // ← added
+  discount_amount = 0,      // ← added
+}) => {
+  const sql = `
+    INSERT INTO paypal_orders
+      (paypal_order_id, amount, currency, description,
+       customer_name, customer_email, promo_code, discount_amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+  const [result] = await pool.execute(sql, [
+    paypal_order_id,
+    amount,
+    currency        || "USD",
+    description     || null,
+    customer_name   || null,
+    customer_email  || null,
+    promo_code      || null,
+    discount_amount || 0,
+  ]);
+  return result.insertId;
+};
 
-// // ─── Update order after capture ───────────────────────────────────────────────
+// ─── Update Order After Capture ───────────────────────────────────────────────
 
-// const updatePaypalOrder = async ({ paypal_order_id, paypal_capture_id, payer_id, status }) => {
-//   const sql = `
-//     UPDATE paypal_orders
-//     SET paypal_capture_id = ?,
-//         payer_id          = ?,
-//         status            = ?
-//     WHERE paypal_order_id = ?
-//   `;
-//   const [result] = await pool.execute(sql, [
-//     paypal_capture_id || null,
-//     payer_id          || null,
-//     status,
-//     paypal_order_id,
-//   ]);
-//   return result.affectedRows > 0;
-// };
+const updatePaypalOrder = async ({ paypal_order_id, paypal_capture_id, payer_id, status }) => {
+  const [result] = await pool.execute(
+    `UPDATE paypal_orders
+     SET paypal_capture_id = ?,
+         payer_id          = ?,
+         status            = ?
+     WHERE paypal_order_id = ?`,
+    [paypal_capture_id || null, payer_id || null, status, paypal_order_id]
+  );
+  return result.affectedRows > 0;
+};
 
-// // ─── Get order by PayPal order ID ────────────────────────────────────────────
+// ─── Get Order by PayPal Order ID ─────────────────────────────────────────────
 
-// const getPaypalOrderById = async (paypal_order_id) => {
-//   const [[row]] = await pool.execute(
-//     `SELECT * FROM paypal_orders WHERE paypal_order_id = ?`,
-//     [paypal_order_id]
-//   );
-//   return row || null;
-// };
+const getPaypalOrderById = async (paypal_order_id) => {
+  const [[row]] = await pool.execute(
+    `SELECT * FROM paypal_orders WHERE paypal_order_id = ?`,
+    [paypal_order_id]
+  );
+  return row || null;
+};
 
-// // ─── Get all orders (admin) ───────────────────────────────────────────────────
+// ─── Get All Orders (admin) ───────────────────────────────────────────────────
 
-// const getAllPaypalOrders = async ({ page = 1, limit = 20, status } = {}) => {
-//   const offset = (page - 1) * limit;
+const getAllPaypalOrders = async ({ page = 1, limit = 20, status } = {}) => {
+  const offset      = (page - 1) * limit;
+  let whereClause   = "";
+  const countParams = [];
+  const dataParams  = [];
 
-//   let whereClause = "";
-//   const countParams = [];
-//   const dataParams  = [];
+  if (status) {
+    whereClause = "WHERE status = ?";
+    countParams.push(status);
+    dataParams.push(status);
+  }
+  dataParams.push(limit, offset);
 
-//   if (status) {
-//     whereClause = "WHERE status = ?";
-//     countParams.push(status);
-//     dataParams.push(status);
-//   }
+  const [[rows], [[{ total }]]] = await Promise.all([
+    pool.execute(
+      `SELECT * FROM paypal_orders ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      dataParams
+    ),
+    pool.execute(
+      `SELECT COUNT(*) AS total FROM paypal_orders ${whereClause}`,
+      countParams
+    ),
+  ]);
 
-//   dataParams.push(limit, offset);
+  return { rows, total: Number(total) };
+};
 
-//   const [[rows], [[{ total }]]] = await Promise.all([
-//     pool.execute(
-//       `SELECT * FROM paypal_orders ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-//       dataParams
-//     ),
-//     pool.execute(
-//       `SELECT COUNT(*) AS total FROM paypal_orders ${whereClause}`,
-//       countParams
-//     ),
-//   ]);
-
-//   return { rows, total: Number(total) };
-// };
-
-// export { createPaypalOrder, updatePaypalOrder, getPaypalOrderById, getAllPaypalOrders };
+module.exports = {
+  TAX_RATE,
+  calculateAmountWithTax,
+  createPaypalOrder,
+  updatePaypalOrder,
+  getPaypalOrderById,
+  getAllPaypalOrders,
+};
