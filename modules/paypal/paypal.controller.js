@@ -1,3 +1,5 @@
+const fetch = require("node-fetch"); // ✅ FIX: required for Node <18
+
 const {
   calculateAmountWithTax,
   createPaypalOrder,
@@ -22,7 +24,7 @@ const PAYPAL_BASE_URL = PAYPAL_MODE === "live"
   : "https://api-m.sandbox.paypal.com";
 
 // ─────────────────────────────────────────────
-// 🔐 ACCESS TOKEN
+// 🔐 GET ACCESS TOKEN
 // ─────────────────────────────────────────────
 const getAccessToken = async () => {
   const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
@@ -39,7 +41,8 @@ const getAccessToken = async () => {
   const data = await res.json();
 
   if (!res.ok) {
-    throw new Error("PayPal auth failed");
+    console.error("❌ PayPal Token Error:", data);
+    throw new Error("Failed to authenticate with PayPal");
   }
 
   return data.access_token;
@@ -63,7 +66,7 @@ const paypalRequest = async (endpoint, method = "GET", body = null) => {
   const data = await res.json();
 
   if (!res.ok) {
-    console.error("PayPal ERROR:", data);
+    console.error("❌ PayPal API Error:", data);
     throw new Error(data.message || "PayPal API error");
   }
 
@@ -85,6 +88,7 @@ const createOrder = async (req, res, next) => {
     } = req.body;
 
     const baseAmount = parseFloat(amount);
+
     if (!baseAmount || baseAmount <= 0) {
       return res.status(400).json({ success: false, message: "Invalid amount" });
     }
@@ -99,7 +103,7 @@ const createOrder = async (req, res, next) => {
       });
 
       if (!valid) {
-        return res.status(400).json({ success: false, message: "Invalid promo" });
+        return res.status(400).json({ success: false, message: "Invalid promo code" });
       }
 
       breakdown      = calculatePromoBreakdown(promo, baseAmount);
@@ -159,12 +163,13 @@ const createOrder = async (req, res, next) => {
     });
 
   } catch (err) {
+    console.error("❌ CREATE ORDER ERROR:", err.message);
     next(err);
   }
 };
 
 // ─────────────────────────────────────────────
-// 💰 CAPTURE ORDER (🔥 FIXED CORE)
+// 💰 CAPTURE ORDER (🔥 STRICT FIX)
 // ─────────────────────────────────────────────
 const captureOrder = async (req, res, next) => {
   try {
@@ -174,9 +179,9 @@ const captureOrder = async (req, res, next) => {
       return res.status(400).json({ success: false, message: "order_id required" });
     }
 
-    console.log("Capturing:", order_id);
+    console.log("🔄 Capturing PayPal Order:", order_id);
 
-    // ✅ STEP 1: GET ORDER STATUS
+    // STEP 1: CHECK STATUS
     const orderDetails = await paypalRequest(`/v2/checkout/orders/${order_id}`);
 
     if (orderDetails.status !== "APPROVED") {
@@ -186,15 +191,15 @@ const captureOrder = async (req, res, next) => {
       });
     }
 
-    // ✅ STEP 2: CAPTURE
+    // STEP 2: CAPTURE
     const capture = await paypalRequest(`/v2/checkout/orders/${order_id}/capture`, "POST");
 
-    console.log("CAPTURE RESPONSE:", JSON.stringify(capture, null, 2));
+    console.log("📦 CAPTURE RESPONSE:", JSON.stringify(capture, null, 2));
 
     const captureData =
       capture.purchase_units?.[0]?.payments?.captures?.[0];
 
-    // 🔥 STRICT VALIDATION (NO FAKE SUCCESS)
+    // 🔥 STRICT VALIDATION
     const isCompleted =
       capture.status === "COMPLETED" &&
       captureData?.status === "COMPLETED";
@@ -230,7 +235,7 @@ const captureOrder = async (req, res, next) => {
     });
 
   } catch (err) {
-    console.error("CAPTURE ERROR:", err.message);
+    console.error("❌ CAPTURE ERROR:", err.message);
     next(err);
   }
 };
