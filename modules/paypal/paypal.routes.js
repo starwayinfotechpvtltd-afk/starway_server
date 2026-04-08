@@ -1,64 +1,31 @@
-// const { Router } = require("express");
-// const router = Router();
-
-// const {
-//   calculateTax,
-//   createOrder,
-//   captureOrder,
-//   handleWebhook,
-//   getOrders,
-// } = require("./paypal.controller");
-
-// // ─────────────────────────────────────────────
-// // 🟢 PUBLIC ROUTES
-// // ─────────────────────────────────────────────
-
-// // Calculate tax
-// router.post("/calculate-tax", calculateTax);
-
-// // Create PayPal order
-// router.post("/create-order", createOrder);
-
-// // Capture payment
-// router.post("/capture-order", captureOrder);
-
-// // Webhook (IMPORTANT: raw body required)
-// router.post(
-//   "/webhook",
-//   require("express").raw({ type: "application/json" }),
-//   handleWebhook
-// );
-
-// // ─────────────────────────────────────────────
-// // 🔒 ADMIN ROUTES
-// // ─────────────────────────────────────────────
-
-// router.get("/orders", getOrders);
-
-// module.exports = router;
-
-
-
-
 const { Router } = require("express");
-const router = Router();
-
-// ✅ Only import what actually exists in controller
 const {
+  calculateTax,
   createOrder,
   captureOrder,
+  handleWebhook,
+  getOrders,
 } = require("./paypal.controller");
 
-// ─────────────────────────────────────────────
-// 🟢 PUBLIC ROUTES (PAYPAL)
-// ─────────────────────────────────────────────
+const router = Router();
 
-// Create PayPal Order
-// POST /api/paypal/create-order
-router.post("/create-order", createOrder);
+// ─── Public ───────────────────────────────────────────────────────────────────
 
-// Capture PayPal Payment
-// POST /api/paypal/capture-order
-router.post("/capture-order", captureOrder);
+// POST /api/paypal/calculate-tax   — { amount, currency? }
+router.post("/calculate-tax",  calculateTax);
+
+// POST /api/paypal/create-order    — { amount, currency?, description?, promo_code?, customer_name?, customer_email? }
+router.post("/create-order",   createOrder);
+
+// POST /api/paypal/capture-order   — { order_id }
+router.post("/capture-order",  captureOrder);
+
+// POST /api/paypal/webhook         — raw body (PayPal server-to-server)
+router.post("/webhook",        handleWebhook);
+
+// ─── Admin ────────────────────────────────────────────────────────────────────
+
+// GET /api/paypal/orders?page=1&limit=20&status=captured
+router.get("/orders", getOrders);
 
 module.exports = router;
