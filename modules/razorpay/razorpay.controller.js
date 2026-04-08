@@ -10,9 +10,8 @@ const {
 } = require("./razorpay.model");
 
 // ─── Supported currencies ─────────────────────────────────────────────────────
-// NZD is NOT supported by Razorpay international — excluded
 
-const SUPPORTED_CURRENCIES = ["INR", "USD", "AUD", "CAD", "EUR", "GBP"];
+const SUPPORTED_CURRENCIES = ["INR", "USD", "EUR", "GBP", "AUD", "CAD", "NZD"];
 
 const KEY_ID     = process.env.RAZORPAY_KEY_ID;
 const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
