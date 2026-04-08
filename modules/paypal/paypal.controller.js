@@ -118,24 +118,53 @@ const createOrder = async (req, res, next) => {
     }
 
     // ── Calculate with/without promo ──────────────────────────────────────────
-    let breakdown, itemTotal, taxTotal, finalTotal, normalDiscount = 0, taxWaived = 0;
+    let breakdown, taxTotal, finalTotal, normalDiscount = 0, taxWaived = 0;
 
     if (promo_code) {
       const { valid, promo, error } = await validatePromoCode({ code: promo_code, baseAmount, email: customer_email });
       if (!valid) return res.status(400).json({ success: false, message: error || "Invalid promo code" });
-      breakdown = calculatePromoBreakdown(promo, baseAmount);
-      itemTotal = breakdown.discounted_base;
-      taxTotal  = breakdown.tax_payable;
-      finalTotal = breakdown.final_amount;
+      breakdown      = calculatePromoBreakdown(promo, baseAmount);
+      taxTotal       = breakdown.tax_payable;
+      finalTotal     = breakdown.final_amount;
       normalDiscount = breakdown.normal_discount;
-      taxWaived = breakdown.tax_waived;
+      taxWaived      = breakdown.tax_waived;
     } else {
       const calc = calculateAmountWithTax(baseAmount);
-      itemTotal = calc.base; taxTotal = calc.tax; finalTotal = calc.total;
-      breakdown = { base_amount: calc.base, normal_discount: 0, discounted_base: calc.base, gross_tax: calc.tax, tax_waived: 0, tax_payable: calc.tax, final_amount: calc.total, has_normal_discount: false, has_tax_discount: false, is_tax_free: false, discount_label: null };
+      taxTotal   = calc.tax;
+      finalTotal = calc.total;
+      breakdown  = {
+        base_amount:         calc.base,
+        normal_discount:     0,
+        discounted_base:     calc.base,
+        gross_tax:           calc.tax,
+        tax_waived:          0,
+        tax_payable:         calc.tax,
+        final_amount:        calc.total,
+        has_normal_discount: false,
+        has_tax_discount:    false,
+        is_tax_free:         false,
+        discount_label:      null,
+      };
     }
 
     console.log(`PayPal breakdown — Base:${baseAmount} Tax:${taxTotal} Final:${finalTotal} ${currency}`);
+
+    // ── FIX: PayPal breakdown math must satisfy:
+    //    item_total - discount + tax_total = value
+    //    baseAmount - (normalDiscount + taxWaived) + taxTotal = finalTotal ✅
+    // ──────────────────────────────────────────────────────────────────────────
+    const totalDiscount = parseFloat((normalDiscount + taxWaived).toFixed(2));
+
+    const breakdownPayload = {
+      item_total: { currency_code: currency, value: baseAmount.toFixed(2) },
+      tax_total:  { currency_code: currency, value: taxTotal.toFixed(2)   },
+    };
+
+    // Only include discount field if there is an actual discount
+    // PayPal rejects discount: 0.00 in some SDK versions
+    if (totalDiscount > 0) {
+      breakdownPayload.discount = { currency_code: currency, value: totalDiscount.toFixed(2) };
+    }
 
     const orderPayload = {
       intent: "CAPTURE",
@@ -144,11 +173,7 @@ const createOrder = async (req, res, next) => {
         amount: {
           currency_code: currency,
           value:         finalTotal.toFixed(2),
-          breakdown: {
-            item_total: { currency_code: currency, value: baseAmount.toFixed(2) },
-            tax_total:  { currency_code: currency, value: taxTotal.toFixed(2)   },
-            ...(normalDiscount > 0 && { discount: { currency_code: currency, value: normalDiscount.toFixed(2) } }),
-          },
+          breakdown:     breakdownPayload,
         },
         items: [{
           name:        description,
@@ -179,12 +204,19 @@ const createOrder = async (req, res, next) => {
       customer_name,
       customer_email,
       promo_code:      promo_code || null,
-      discount_amount: normalDiscount + taxWaived,
+      discount_amount: totalDiscount,
     });
 
     if (promo_code) {
       try {
-        await applyPromoCode({ code: promo_code, baseAmount, email: customer_email, gateway: "paypal", order_ref: paypalOrder.id, currency });
+        await applyPromoCode({
+          code:       promo_code,
+          baseAmount,
+          email:      customer_email,
+          gateway:    "paypal",
+          order_ref:  paypalOrder.id,
+          currency,
+        });
       } catch (promoErr) {
         console.warn("Promo usage recording failed:", promoErr.message);
       }
@@ -195,7 +227,12 @@ const createOrder = async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: "PayPal order created successfully",
-      data: { order_id: paypalOrder.id, approve_link: approveLink, status: paypalOrder.status, breakdown },
+      data: {
+        order_id:     paypalOrder.id,
+        approve_link: approveLink,
+        status:       paypalOrder.status,
+        breakdown,                        // ← full server-side breakdown returned to frontend
+      },
     });
 
   } catch (error) {
@@ -217,17 +254,15 @@ const captureOrder = async (req, res, next) => {
 
     console.log(`\n Capturing PayPal order: ${order_id}`);
 
-    // ── First check current order status BEFORE capturing ────────────────────
+    // ── Check current order status BEFORE capturing ───────────────────────────
     const orderDetails = await paypalRequest(`/v2/checkout/orders/${order_id}`, "GET");
     console.log(`Order status before capture: ${orderDetails.status}`);
-    console.log(`Full order details:`, JSON.stringify(orderDetails, null, 2));
 
-    // Only capture if order is APPROVED
     if (orderDetails.status !== "APPROVED") {
       console.error(`Cannot capture — order status is ${orderDetails.status}, not APPROVED`);
       return res.status(400).json({
-        success: false,
-        message: `Cannot capture payment — order status is "${orderDetails.status}". Must be APPROVED first.`,
+        success:      false,
+        message:      `Cannot capture payment — order status is "${orderDetails.status}". Must be APPROVED first.`,
         order_status: orderDetails.status,
       });
     }
@@ -237,10 +272,10 @@ const captureOrder = async (req, res, next) => {
 
     console.log(`Full capture response:`, JSON.stringify(capture, null, 2));
 
-    const captureUnit = capture.purchase_units?.[0]?.payments?.captures?.[0];
-    const captureId   = captureUnit?.id   || null;
+    const captureUnit   = capture.purchase_units?.[0]?.payments?.captures?.[0];
+    const captureId     = captureUnit?.id     || null;
     const captureStatus = captureUnit?.status || null;
-    const payerId     = capture.payer?.payer_id || null;
+    const payerId       = capture.payer?.payer_id || null;
 
     console.log(`Capture ID: ${captureId}`);
     console.log(`Capture status: ${captureStatus}`);
@@ -302,20 +337,46 @@ const handleWebhook = async (req, res, next) => {
 
     switch (event.event_type) {
       case "CHECKOUT.ORDER.APPROVED":
-        await updatePaypalOrder({ paypal_order_id: resource.id, paypal_capture_id: null, payer_id: resource.payer?.payer_id || null, status: "approved" }); break;
+        await updatePaypalOrder({
+          paypal_order_id:   resource.id,
+          paypal_capture_id: null,
+          payer_id:          resource.payer?.payer_id || null,
+          status:            "approved",
+        });
+        break;
       case "PAYMENT.CAPTURE.COMPLETED":
-        await updatePaypalOrder({ paypal_order_id: resource.supplementary_data?.related_ids?.order_id || resource.id, paypal_capture_id: resource.id, payer_id: null, status: "captured" }); break;
+        await updatePaypalOrder({
+          paypal_order_id:   resource.supplementary_data?.related_ids?.order_id || resource.id,
+          paypal_capture_id: resource.id,
+          payer_id:          null,
+          status:            "captured",
+        });
+        break;
       case "PAYMENT.CAPTURE.DENIED":
       case "PAYMENT.CAPTURE.DECLINED":
-        await updatePaypalOrder({ paypal_order_id: resource.supplementary_data?.related_ids?.order_id || resource.id, paypal_capture_id: resource.id, payer_id: null, status: "failed" }); break;
+        await updatePaypalOrder({
+          paypal_order_id:   resource.supplementary_data?.related_ids?.order_id || resource.id,
+          paypal_capture_id: resource.id,
+          payer_id:          null,
+          status:            "failed",
+        });
+        break;
       case "PAYMENT.CAPTURE.REFUNDED":
-        await updatePaypalOrder({ paypal_order_id: resource.supplementary_data?.related_ids?.order_id || resource.id, paypal_capture_id: resource.id, payer_id: null, status: "refunded" }); break;
+        await updatePaypalOrder({
+          paypal_order_id:   resource.supplementary_data?.related_ids?.order_id || resource.id,
+          paypal_capture_id: resource.id,
+          payer_id:          null,
+          status:            "refunded",
+        });
+        break;
       default:
         console.log(`Unhandled PayPal event: ${event.event_type}`);
     }
 
     res.status(200).json({ received: true });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
 // ─── GET /api/paypal/orders ───────────────────────────────────────────────────
@@ -327,11 +388,20 @@ const getOrders = async (req, res, next) => {
     const status = req.query.status || undefined;
     const validStatuses = ["created", "approved", "captured", "failed", "refunded"];
     if (status && !validStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: `Invalid status. Must be: ${validStatuses.join(", ")}` });
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be: ${validStatuses.join(", ")}`,
+      });
     }
     const { rows, total } = await getAllPaypalOrders({ page, limit, status });
-    res.status(200).json({ success: true, data: rows, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-  } catch (error) { next(error); }
+    res.status(200).json({
+      success: true,
+      data:    rows,
+      meta:    { total, page, limit, totalPages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 module.exports = { calculateTax, createOrder, captureOrder, handleWebhook, getOrders };
