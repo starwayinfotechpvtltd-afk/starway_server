@@ -1,3 +1,4 @@
+const fetch = require("node-fetch");
 const {
   calculateAmountWithTax,
   createPaypalOrder,
@@ -16,8 +17,8 @@ const {
 // ─── PayPal Config ────────────────────────────────────────────────────────────
 
 const CLIENT_ID     = process.env.PAYPAL_CLIENT_ID;
-const CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET; // ✅ FIXED
-const PAYPAL_MODE   = process.env.PAYPAL_MODE || "sandbox";
+const CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
+const PAYPAL_MODE   = process.env.PAYPAL_MODE;
 
 const PAYPAL_BASE_URL = PAYPAL_MODE === "live"
   ? "https://api-m.paypal.com"
@@ -32,25 +33,31 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const getAccessToken = async () => {
-  const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
+  try {
+    const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
 
-  const res = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: "grant_type=client_credentials",
-  });
+    const res = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "grant_type=client_credentials",
+    });
 
-  const data = await res.json();
+    const data = await res.json();
 
-  if (!res.ok) {
-    console.error("PayPal token error:", data);
-    throw new Error(data.error_description || "Failed to get PayPal access token");
+    if (!res.ok) {
+      console.error("❌ PayPal token error FULL:", data);
+      throw new Error(data.error_description || "Token failed");
+    }
+
+    return data.access_token;
+
+  } catch (err) {
+    console.error("❌ getAccessToken crash:", err.message);
+    throw err;
   }
-
-  return data.access_token;
 };
 
 const paypalRequest = async (endpoint, method = "GET", body = null) => {
