@@ -5,7 +5,7 @@ const { pool } = require("../../config/db");
 const TAX_RATE = 0.10;
 
 const calculateAmountWithTax = (baseAmount) => {
-  const base  = parseFloat(parseFloat(baseAmount).toFixed(2));
+  const base  = parseFloat(parseFloat(baseAmount || 0).toFixed(2));
   const tax   = parseFloat((base * TAX_RATE).toFixed(2));
   const total = parseFloat((base + tax).toFixed(2));
   return { base, tax, total };
@@ -20,39 +20,55 @@ const createPaypalOrder = async ({
   description,
   customer_name,
   customer_email,
-  promo_code      = null,   // ← added
-  discount_amount = 0,      // ← added
+  promo_code      = null,
+  discount_amount = 0,
 }) => {
+  const safeAmount = parseFloat(amount || 0).toFixed(2);
+  const safeDiscount = parseFloat(discount_amount || 0).toFixed(2);
+
   const sql = `
     INSERT INTO paypal_orders
       (paypal_order_id, amount, currency, description,
        customer_name, customer_email, promo_code, discount_amount)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `;
+
   const [result] = await pool.execute(sql, [
     paypal_order_id,
-    amount,
+    safeAmount,
     currency        || "USD",
     description     || null,
     customer_name   || null,
     customer_email  || null,
     promo_code      || null,
-    discount_amount || 0,
+    safeDiscount,
   ]);
+
   return result.insertId;
 };
 
 // ─── Update Order After Capture ───────────────────────────────────────────────
 
-const updatePaypalOrder = async ({ paypal_order_id, paypal_capture_id, payer_id, status }) => {
+const updatePaypalOrder = async ({
+  paypal_order_id,
+  paypal_capture_id,
+  payer_id,
+  status
+}) => {
   const [result] = await pool.execute(
     `UPDATE paypal_orders
      SET paypal_capture_id = ?,
          payer_id          = ?,
          status            = ?
      WHERE paypal_order_id = ?`,
-    [paypal_capture_id || null, payer_id || null, status, paypal_order_id]
+    [
+      paypal_capture_id || null,
+      payer_id || null,
+      status,
+      paypal_order_id
+    ]
   );
+
   return result.affectedRows > 0;
 };
 
@@ -79,6 +95,7 @@ const getAllPaypalOrders = async ({ page = 1, limit = 20, status } = {}) => {
     countParams.push(status);
     dataParams.push(status);
   }
+
   dataParams.push(limit, offset);
 
   const [[rows], [[{ total }]]] = await Promise.all([

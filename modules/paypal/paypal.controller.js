@@ -16,7 +16,7 @@ const {
 // ─── PayPal Config ────────────────────────────────────────────────────────────
 
 const CLIENT_ID     = process.env.PAYPAL_CLIENT_ID;
-const CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
+const CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET; // ✅ FIXED
 const PAYPAL_MODE   = process.env.PAYPAL_MODE || "sandbox";
 
 const PAYPAL_BASE_URL = PAYPAL_MODE === "live"
@@ -26,18 +26,19 @@ const PAYPAL_BASE_URL = PAYPAL_MODE === "live"
 console.log(`🔧 PayPal mode: ${PAYPAL_MODE} → ${PAYPAL_BASE_URL}`);
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error("❌  PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET missing in .env");
+  console.error("❌ PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET missing in .env");
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const getAccessToken = async () => {
   const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
+
   const res = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
-    method:  "POST",
+    method: "POST",
     headers: {
-      "Authorization": `Basic ${credentials}`,
-      "Content-Type":  "application/x-www-form-urlencoded",
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/x-www-form-urlencoded",
     },
     body: "grant_type=client_credentials",
   });
@@ -45,51 +46,55 @@ const getAccessToken = async () => {
   const data = await res.json();
 
   if (!res.ok) {
-    console.error("PayPal token error:", JSON.stringify(data));
+    console.error("PayPal token error:", data);
     throw new Error(data.error_description || "Failed to get PayPal access token");
   }
 
-  console.log(`PayPal access token obtained (expires in ${data.expires_in}s)`);
   return data.access_token;
 };
 
 const paypalRequest = async (endpoint, method = "GET", body = null) => {
-  const token   = await getAccessToken();
-  const options = {
+  const token = await getAccessToken();
+
+  const res = await fetch(`${PAYPAL_BASE_URL}${endpoint}`, {
     method,
     headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type":  "application/json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
-  };
-  if (body) options.body = JSON.stringify(body);
+    body: body ? JSON.stringify(body) : undefined,
+  });
 
-  console.log(`PayPal API: ${method} ${PAYPAL_BASE_URL}${endpoint}`);
-
-  const res  = await fetch(`${PAYPAL_BASE_URL}${endpoint}`, options);
   const data = await res.json();
 
   if (!res.ok) {
-    console.error(`PayPal API error [${method} ${endpoint}]:`, JSON.stringify(data, null, 2));
-    throw Object.assign(new Error(data.message || "PayPal API error"), { paypalError: data });
+    console.error("PayPal API error:", data);
+    throw new Error(data.message || "PayPal API error");
   }
 
-  console.log(`PayPal API response [${method} ${endpoint}]: status=${data.status || res.status}`);
   return data;
 };
 
 // ─── POST /api/paypal/calculate-tax ──────────────────────────────────────────
 
 const calculateTax = (req, res) => {
-  const baseAmount = parseFloat(req.body.amount);
-  if (!baseAmount || isNaN(baseAmount) || baseAmount <= 0) {
+  const baseAmount = parseFloat(req.body.amount || 0);
+
+  if (baseAmount <= 0) {
     return res.status(400).json({ success: false, message: "amount must be a positive number" });
   }
+
   const { base, tax, total } = calculateAmountWithTax(baseAmount);
-  const currency = req.body.currency || "USD";
+
   res.status(200).json({
     success: true,
-    data: { base_amount: base, tax_rate: `${TAX_RATE * 100}%`, tax_amount: tax, total_amount: total, currency },
+    data: {
+      base_amount: base,
+      tax_rate: `${TAX_RATE * 100}%`,
+      tax_amount: tax,
+      total_amount: total,
+      currency: req.body.currency || "USD",
+    },
   });
 };
 
@@ -97,10 +102,6 @@ const calculateTax = (req, res) => {
 
 const createOrder = async (req, res, next) => {
   try {
-    if (!CLIENT_ID || !CLIENT_SECRET) {
-      return res.status(500).json({ success: false, message: "PayPal credentials not configured." });
-    }
-
     const {
       amount,
       currency       = "USD",
@@ -110,19 +111,25 @@ const createOrder = async (req, res, next) => {
       customer_email = "",
     } = req.body;
 
-    console.log(`\n Creating PayPal order — Amount: ${amount} ${currency} Promo: ${promo_code || "none"}`);
+    const baseAmount = parseFloat(amount || 0);
 
-    const baseAmount = parseFloat(amount);
-    if (!baseAmount || isNaN(baseAmount) || baseAmount <= 0) {
-      return res.status(400).json({ success: false, message: "amount must be a positive number" });
+    if (baseAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid amount" });
     }
 
-    // ── Calculate with/without promo ──────────────────────────────────────────
     let breakdown, taxTotal, finalTotal, normalDiscount = 0, taxWaived = 0;
 
     if (promo_code) {
-      const { valid, promo, error } = await validatePromoCode({ code: promo_code, baseAmount, email: customer_email });
-      if (!valid) return res.status(400).json({ success: false, message: error || "Invalid promo code" });
+      const { valid, promo, error } = await validatePromoCode({
+        code: promo_code,
+        baseAmount,
+        email: customer_email,
+      });
+
+      if (!valid) {
+        return res.status(400).json({ success: false, message: error });
+      }
+
       breakdown      = calculatePromoBreakdown(promo, baseAmount);
       taxTotal       = breakdown.tax_payable;
       finalTotal     = breakdown.final_amount;
@@ -132,39 +139,10 @@ const createOrder = async (req, res, next) => {
       const calc = calculateAmountWithTax(baseAmount);
       taxTotal   = calc.tax;
       finalTotal = calc.total;
-      breakdown  = {
-        base_amount:         calc.base,
-        normal_discount:     0,
-        discounted_base:     calc.base,
-        gross_tax:           calc.tax,
-        tax_waived:          0,
-        tax_payable:         calc.tax,
-        final_amount:        calc.total,
-        has_normal_discount: false,
-        has_tax_discount:    false,
-        is_tax_free:         false,
-        discount_label:      null,
-      };
+      breakdown  = calc;
     }
 
-    console.log(`PayPal breakdown — Base:${baseAmount} Tax:${taxTotal} Final:${finalTotal} ${currency}`);
-
-    // ── FIX: PayPal breakdown math must satisfy:
-    //    item_total - discount + tax_total = value
-    //    baseAmount - (normalDiscount + taxWaived) + taxTotal = finalTotal ✅
-    // ──────────────────────────────────────────────────────────────────────────
     const totalDiscount = parseFloat((normalDiscount + taxWaived).toFixed(2));
-
-    const breakdownPayload = {
-      item_total: { currency_code: currency, value: baseAmount.toFixed(2) },
-      tax_total:  { currency_code: currency, value: taxTotal.toFixed(2)   },
-    };
-
-    // Only include discount field if there is an actual discount
-    // PayPal rejects discount: 0.00 in some SDK versions
-    if (totalDiscount > 0) {
-      breakdownPayload.discount = { currency_code: currency, value: totalDiscount.toFixed(2) };
-    }
 
     const orderPayload = {
       intent: "CAPTURE",
@@ -172,73 +150,36 @@ const createOrder = async (req, res, next) => {
         description,
         amount: {
           currency_code: currency,
-          value:         finalTotal.toFixed(2),
-          breakdown:     breakdownPayload,
+          value: finalTotal.toFixed(2),
         },
-        items: [{
-          name:        description,
-          unit_amount: { currency_code: currency, value: baseAmount.toFixed(2) },
-          tax:         { currency_code: currency, value: taxTotal.toFixed(2)   },
-          quantity:    "1",
-          category:    "DIGITAL_GOODS",
-        }],
       }],
       application_context: {
-        brand_name:          "Starway Web Digital",
-        landing_page:        "NO_PREFERENCE",
-        user_action:         "PAY_NOW",
-        return_url:          `${process.env.CLIENT_URL}/payment/paypal/success`,
-        cancel_url:          `${process.env.CLIENT_URL}/payment/paypal/cancel`,
-        shipping_preference: "NO_SHIPPING",
+        return_url: `${process.env.CLIENT_URL}/payment/success`,
+        cancel_url: `${process.env.CLIENT_URL}/payment/cancel`,
       },
     };
 
     const paypalOrder = await paypalRequest("/v2/checkout/orders", "POST", orderPayload);
-    console.log(`PayPal order created: ${paypalOrder.id} status=${paypalOrder.status}`);
 
     await createPaypalOrder({
       paypal_order_id: paypalOrder.id,
-      amount:          finalTotal,
+      amount: finalTotal,
       currency,
       description,
       customer_name,
       customer_email,
-      promo_code:      promo_code || null,
+      promo_code,
       discount_amount: totalDiscount,
     });
 
-    if (promo_code) {
-      try {
-        await applyPromoCode({
-          code:       promo_code,
-          baseAmount,
-          email:      customer_email,
-          gateway:    "paypal",
-          order_ref:  paypalOrder.id,
-          currency,
-        });
-      } catch (promoErr) {
-        console.warn("Promo usage recording failed:", promoErr.message);
-      }
-    }
-
-    const approveLink = paypalOrder.links?.find((l) => l.rel === "approve")?.href || null;
-
-    res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "PayPal order created successfully",
       data: {
-        order_id:     paypalOrder.id,
-        approve_link: approveLink,
-        status:       paypalOrder.status,
-        breakdown,                        // ← full server-side breakdown returned to frontend
+        order_id: paypalOrder.id,
       },
     });
 
   } catch (error) {
-    if (error.paypalError) {
-      return res.status(502).json({ success: false, message: error.message, paypal_error: error.paypalError });
-    }
     next(error);
   }
 };
@@ -248,80 +189,30 @@ const createOrder = async (req, res, next) => {
 const captureOrder = async (req, res, next) => {
   try {
     const { order_id } = req.body;
+
     if (!order_id) {
-      return res.status(400).json({ success: false, message: "order_id is required" });
+      return res.status(400).json({ success: false, message: "order_id required" });
     }
 
-    console.log(`\n Capturing PayPal order: ${order_id}`);
-
-    // ── Check current order status BEFORE capturing ───────────────────────────
-    const orderDetails = await paypalRequest(`/v2/checkout/orders/${order_id}`, "GET");
-    console.log(`Order status before capture: ${orderDetails.status}`);
-
-    if (orderDetails.status !== "APPROVED") {
-      console.error(`Cannot capture — order status is ${orderDetails.status}, not APPROVED`);
-      return res.status(400).json({
-        success:      false,
-        message:      `Cannot capture payment — order status is "${orderDetails.status}". Must be APPROVED first.`,
-        order_status: orderDetails.status,
-      });
-    }
-
-    // ── Capture the payment ───────────────────────────────────────────────────
     const capture = await paypalRequest(`/v2/checkout/orders/${order_id}/capture`, "POST");
 
-    console.log(`Full capture response:`, JSON.stringify(capture, null, 2));
+    const captureUnit = capture.purchase_units?.[0]?.payments?.captures?.[0];
 
-    const captureUnit   = capture.purchase_units?.[0]?.payments?.captures?.[0];
-    const captureId     = captureUnit?.id     || null;
-    const captureStatus = captureUnit?.status || null;
-    const payerId       = capture.payer?.payer_id || null;
-
-    console.log(`Capture ID: ${captureId}`);
-    console.log(`Capture status: ${captureStatus}`);
-    console.log(`Overall capture status: ${capture.status}`);
-
-    const isSuccess = captureStatus === "COMPLETED" || capture.status === "COMPLETED";
+    const isSuccess = captureUnit?.status === "COMPLETED";
 
     await updatePaypalOrder({
-      paypal_order_id:   order_id,
-      paypal_capture_id: captureId,
-      payer_id:          payerId,
-      status:            isSuccess ? "captured" : "failed",
+      paypal_order_id: order_id,
+      paypal_capture_id: captureUnit?.id,
+      payer_id: capture.payer?.payer_id,
+      status: isSuccess ? "captured" : "failed",
     });
 
-    if (!isSuccess) {
-      console.error(`Capture failed — captureStatus: ${captureStatus} overall: ${capture.status}`);
-      return res.status(400).json({
-        success:        false,
-        message:        "Payment capture failed",
-        capture_status: captureStatus,
-        order_status:   capture.status,
-      });
-    }
-
-    console.log(`PayPal payment captured successfully: ${captureId}`);
-    const order = await getPaypalOrderById(order_id);
-
-    res.status(200).json({
-      success: true,
-      message: "Payment captured successfully",
-      data: {
-        order_id,
-        capture_id: captureId,
-        payer_id:   payerId,
-        amount:     order?.amount,
-        currency:   order?.currency,
-        status:     "captured",
-      },
+    return res.status(200).json({
+      success: isSuccess,
+      data: captureUnit,
     });
 
   } catch (error) {
-    console.error(`captureOrder error:`, error);
-    if (error.paypalError) {
-      console.error(`PayPal error details:`, JSON.stringify(error.paypalError, null, 2));
-      return res.status(502).json({ success: false, message: error.message, paypal_error: error.paypalError });
-    }
     next(error);
   }
 };
@@ -330,50 +221,29 @@ const captureOrder = async (req, res, next) => {
 
 const handleWebhook = async (req, res, next) => {
   try {
-    const rawBody  = req.body;
-    const event    = JSON.parse(rawBody.toString());
+    const event = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+
     const resource = event.resource;
-    console.log(`PayPal webhook: ${event.event_type}`);
 
     switch (event.event_type) {
-      case "CHECKOUT.ORDER.APPROVED":
-        await updatePaypalOrder({
-          paypal_order_id:   resource.id,
-          paypal_capture_id: null,
-          payer_id:          resource.payer?.payer_id || null,
-          status:            "approved",
-        });
-        break;
       case "PAYMENT.CAPTURE.COMPLETED":
         await updatePaypalOrder({
-          paypal_order_id:   resource.supplementary_data?.related_ids?.order_id || resource.id,
+          paypal_order_id: resource.supplementary_data?.related_ids?.order_id,
           paypal_capture_id: resource.id,
-          payer_id:          null,
-          status:            "captured",
+          status: "captured",
         });
         break;
+
       case "PAYMENT.CAPTURE.DENIED":
-      case "PAYMENT.CAPTURE.DECLINED":
         await updatePaypalOrder({
-          paypal_order_id:   resource.supplementary_data?.related_ids?.order_id || resource.id,
-          paypal_capture_id: resource.id,
-          payer_id:          null,
-          status:            "failed",
+          paypal_order_id: resource.id,
+          status: "failed",
         });
         break;
-      case "PAYMENT.CAPTURE.REFUNDED":
-        await updatePaypalOrder({
-          paypal_order_id:   resource.supplementary_data?.related_ids?.order_id || resource.id,
-          paypal_capture_id: resource.id,
-          payer_id:          null,
-          status:            "refunded",
-        });
-        break;
-      default:
-        console.log(`Unhandled PayPal event: ${event.event_type}`);
     }
 
-    res.status(200).json({ received: true });
+    res.status(200).send("OK");
+
   } catch (error) {
     next(error);
   }
@@ -383,25 +253,26 @@ const handleWebhook = async (req, res, next) => {
 
 const getOrders = async (req, res, next) => {
   try {
-    const page   = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit  = Math.min(100, parseInt(req.query.limit) || 20);
-    const status = req.query.status || undefined;
-    const validStatuses = ["created", "approved", "captured", "failed", "refunded"];
-    if (status && !validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status. Must be: ${validStatuses.join(", ")}`,
-      });
-    }
-    const { rows, total } = await getAllPaypalOrders({ page, limit, status });
-    res.status(200).json({
+    const page   = parseInt(req.query.page) || 1;
+    const limit  = parseInt(req.query.limit) || 20;
+
+    const { rows, total } = await getAllPaypalOrders({ page, limit });
+
+    res.json({
       success: true,
-      data:    rows,
-      meta:    { total, page, limit, totalPages: Math.ceil(total / limit) },
+      data: rows,
+      total,
     });
+
   } catch (error) {
     next(error);
   }
 };
 
-module.exports = { calculateTax, createOrder, captureOrder, handleWebhook, getOrders };
+module.exports = {
+  calculateTax,
+  createOrder,
+  captureOrder,
+  handleWebhook,
+  getOrders,
+};

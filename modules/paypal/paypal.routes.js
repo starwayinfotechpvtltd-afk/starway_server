@@ -21,7 +21,11 @@ router.post("/create-order",   createOrder);
 router.post("/capture-order",  captureOrder);
 
 // POST /api/paypal/webhook         — raw body (PayPal server-to-server)
-router.post("/webhook",        handleWebhook);
+router.post(
+  "/webhook",
+  require("express").raw({ type: "application/json" }), // ✅ IMPORTANT
+  handleWebhook
+);
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
