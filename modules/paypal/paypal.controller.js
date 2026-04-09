@@ -1,4 +1,4 @@
-const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
+const fetch = require("node-fetch");
 const {
   calculateAmountWithTax,
   createPaypalOrder,
@@ -236,7 +236,7 @@ const captureOrder = async (req, res, next) => {
 
 const handleWebhook = async (req, res, next) => {
   try {
-    const event = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const event = req.body;
 
     const resource = event.resource;
 
