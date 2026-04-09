@@ -47,14 +47,10 @@ const getAccessToken = async () => {
 
     const data = await res.json();
 
-if (!res.ok) {
-  console.error("❌ PayPal FULL ERROR:", data);
-  throw new Error(
-    data?.details?.[0]?.description ||
-    data?.message ||
-    "PayPal API error"
-  );
-}
+    if (!res.ok) {
+      console.error("❌ PayPal token error FULL:", data);
+      throw new Error(data.error_description || "Token failed");
+    }
 
     return data.access_token;
 
@@ -191,13 +187,8 @@ const createOrder = async (req, res, next) => {
     });
 
   } catch (error) {
-  console.error("❌ CREATE ORDER ERROR:", error);
-
-  return res.status(500).json({
-    success: false,
-    message: error.message || "Create order failed",
-  });
-}
+    next(error);
+  }
 };
 
 // ─── POST /api/paypal/capture-order ──────────────────────────────────────────
@@ -229,13 +220,8 @@ const captureOrder = async (req, res, next) => {
     });
 
   } catch (error) {
-  console.error("❌ CAPTURE ERROR:", error);
-
-  return res.status(500).json({
-    success: false,
-    message: error.message || "Capture failed",
-  });
-}
+    next(error);
+  }
 };
 
 // ─── POST /api/paypal/webhook ─────────────────────────────────────────────────
