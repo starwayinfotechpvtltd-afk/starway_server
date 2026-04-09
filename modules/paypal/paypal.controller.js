@@ -45,17 +45,25 @@ const getAccessToken = async () => {
       body: "grant_type=client_credentials",
     });
 
-    const data = await res.json();
+    const text = await res.text(); // 👈 IMPORTANT
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.error("❌ Invalid JSON from PayPal:", text);
+      throw new Error("Invalid PayPal response");
+    }
 
     if (!res.ok) {
-      console.error("❌ PayPal token error FULL:", data);
+      console.error("❌ PayPal TOKEN ERROR:", data);
       throw new Error(data.error_description || "Token failed");
     }
 
     return data.access_token;
 
   } catch (err) {
-    console.error("❌ getAccessToken crash:", err.message);
+    console.error("❌ getAccessToken FAILED:", err.message);
     throw err;
   }
 };
