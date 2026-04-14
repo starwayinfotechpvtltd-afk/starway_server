@@ -1,12 +1,7 @@
 require("dotenv").config();
 const app = require("./App");
 
-const PORT = process.env.PORT;
-
-if (!PORT) {
-  console.error("❌ PORT is not defined. Hosting issue.");
-  process.exit(1);
-}
+const PORT = process.env.PORT || 5002;
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
