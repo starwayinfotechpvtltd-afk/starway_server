@@ -4,11 +4,12 @@ const {
   patchContactStatus, removeContact,
 } = require("./contact.controller");
 const validateContact = require("../../middleware/validateContact");
+const verifyRecaptcha = require("../../middleware/verifyRecaptcha");
 
 const router = Router();
 
 // ─── Public ───────────────────────────────────────────────────────────────────
-router.post("/", validateContact, submitContact);
+router.post("/", validateContact, verifyRecaptcha, submitContact);
 
 // ─── Admin (add auth middleware before going live) ────────────────────────────
 router.get("/",              getContacts);
