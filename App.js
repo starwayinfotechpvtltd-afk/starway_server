@@ -10,7 +10,6 @@ const contactRoutes = require("./modules/contact/contact.routes");
 const razorpayRoutes = require("./modules/razorpay/razorpay.routes");
 const paypalRoutes   = require("./modules/paypal/paypal.routes");
 const promoRoutes    = require("./modules/promo/promo.routes");
-const serviceLeadRoutes = require("./modules/serviceLead/serviceLead.routes");
 
 const app = express();
 
@@ -84,7 +83,7 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/razorpay", razorpayRoutes);
 app.use("/api/paypal",   paypalRoutes);
 app.use("/api/promo",    promoRoutes);
-app.use("/api/service-lead", serviceLeadRoutes);
+
 // ─── 404 ─────────────────────────────────────────────────────────────────────
 
 app.use((req, res) => {
