@@ -30,6 +30,7 @@ process.on("SIGINT",  () => shutdown("SIGINT"));
 
 process.on("unhandledRejection", (reason) => {
   console.error("❌ Unhandled Rejection:", reason);
+  process.exit(1); // 👈 add this
 });
 
 process.on("uncaughtException", (err) => {
