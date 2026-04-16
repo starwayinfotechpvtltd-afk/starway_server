@@ -44,7 +44,7 @@ const submitServiceLead = async (req, res, next) => {
         console.log("📧 Mail Results:", results);
       });
     } else {
-      console.warn("⚠️ Skipping email — missing data");
+      console.warn("Skipping email — missing data");
     }
 
     res.status(201).json({
