@@ -202,45 +202,83 @@ const verifyPayment = async (req, res, next) => {
 
 // ─── POST /api/razorpay/webhook ───────────────────────────────────────────────
 
-const handleWebhook = async (req, res, next) => {
+const handleWebhook = async (req, res) => {
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const receivedSig   = req.headers["x-razorpay-signature"];
-    const rawBody       = req.body;
+    const rawBody       = req.body; // MUST be buffer (from express.raw)
 
-    const expectedSig = crypto.createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
-
-    if (!receivedSig || !crypto.timingSafeEqual(
-      Buffer.from(expectedSig, "utf8"),
-      Buffer.from(receivedSig, "utf8")
-    )) {
-      return res.status(400).json({ success: false, message: "Invalid webhook signature" });
+    // ❌ safety check
+    if (!webhookSecret) {
+      return res.status(500).send("Webhook secret missing");
     }
 
-    const event   = JSON.parse(rawBody.toString());
+    // ✅ correct signature generation
+    const expectedSig = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody)
+      .digest("hex");
+
+    // ❌ invalid signature
+    if (
+      !receivedSig ||
+      !crypto.timingSafeEqual(
+        Buffer.from(expectedSig, "hex"),
+        Buffer.from(receivedSig, "hex")
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid webhook signature",
+      });
+    }
+
+    // ✅ safe parsing (raw buffer → JSON)
+    const event = JSON.parse(rawBody.toString());
     const payload = event?.payload?.payment?.entity;
+
     console.log(`📦 Razorpay webhook: ${event.event}`);
 
     switch (event.event) {
       case "payment.captured":
-        await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.id, razorpay_signature: null, status: "paid" });
+        await updateOrderAfterPayment({
+          razorpay_order_id: payload.order_id,
+          razorpay_payment_id: payload.id,
+          razorpay_signature: null,
+          status: "paid",
+        });
         break;
+
       case "payment.failed":
-        await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.id, razorpay_signature: null, status: "failed" });
+        await updateOrderAfterPayment({
+          razorpay_order_id: payload.order_id,
+          razorpay_payment_id: payload.id,
+          razorpay_signature: null,
+          status: "failed",
+        });
         break;
+
       case "refund.created":
-        await updateOrderAfterPayment({ razorpay_order_id: payload.order_id, razorpay_payment_id: payload.payment_id, razorpay_signature: null, status: "refunded" });
+        await updateOrderAfterPayment({
+          razorpay_order_id: payload.order_id,
+          razorpay_payment_id: payload.payment_id,
+          razorpay_signature: null,
+          status: "refunded",
+        });
         break;
+
       default:
-        console.log(`ℹ️  Unhandled webhook: ${event.event}`);
+        console.log(`ℹ️ Unhandled webhook: ${event.event}`);
     }
 
-    res.status(200).json({ received: true });
+    // ✅ ALWAYS respond 200
+    return res.status(200).json({ received: true });
+
   } catch (error) {
-    next(error);
+    console.error("❌ Webhook error:", error);
+    return res.status(200).json({ received: true }); // never fail webhook
   }
 };
-
 // ─── GET /api/razorpay/orders ─────────────────────────────────────────────────
 
 const getOrders = async (req, res, next) => {
