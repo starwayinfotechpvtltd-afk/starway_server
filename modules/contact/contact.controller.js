@@ -12,7 +12,7 @@ const {
 
 const submitContact = async (req, res, next) => {
   try {
-    const { full_name, email, phone, designation, project_overview, website_url } = req.body;
+    const { full_name, email, phone, designation, project_overview, website_url, services } = req.body;
 
     const ip_address =
       req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
@@ -24,12 +24,19 @@ const submitContact = async (req, res, next) => {
       project_overview, website_url, ip_address,
     });
 
+    const emailPayload = {
+      full_name,
+      email,
+      phone,
+      designation,
+      project_overview,
+      website_url,
+      services: services || [],
+    };
+
     Promise.allSettled([
-      sendContactConfirmation({ full_name, email, project_overview, services: [] }),
-      sendAdminNotification({
-        full_name, email, phone,
-        project_overview, website_url, designation, services: [],
-      }),
+      sendContactConfirmation(emailPayload),
+      sendAdminNotification(emailPayload),
     ]).then((results) => {
       const labels = ["User confirmation", "Admin notification"];
       results.forEach((r, i) => {

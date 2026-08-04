@@ -39,8 +39,17 @@ const contactRules = [
   body("website_url")
     .optional({ nullable: true, checkFalsy: true })
     .trim()
-    .isURL({ require_protocol: true })
-    .withMessage("Please provide a valid URL including http:// or https://"),
+    .isURL({ require_protocol: false })
+    .withMessage("Please provide a valid URL"),
+
+  body("services")
+    .optional({ nullable: true })
+    .custom((value) => {
+      if (value !== undefined && !Array.isArray(value) && typeof value !== "string") {
+        throw new Error("Services must be an array or string");
+      }
+      return true;
+    }),
 ];
 
 const handleValidationErrors = (req, res, next) => {
