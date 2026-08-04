@@ -31,8 +31,9 @@ const contactRules = [
     .withMessage("Designation must be under 100 characters"),
 
   body("project_overview")
-    .optional({ nullable: true, checkFalsy: true })
     .trim()
+    .notEmpty()
+    .withMessage("Project overview is required")
     .isLength({ max: 3000 })
     .withMessage("Message must be under 3000 characters"),
 
@@ -43,10 +44,9 @@ const contactRules = [
     .withMessage("Please provide a valid URL"),
 
   body("services")
-    .optional({ nullable: true })
     .custom((value) => {
-      if (value !== undefined && !Array.isArray(value) && typeof value !== "string") {
-        throw new Error("Services must be an array or string");
+      if (!value || (Array.isArray(value) && value.length === 0) || (typeof value === "string" && !value.trim())) {
+        throw new Error("Please select at least one service");
       }
       return true;
     }),
