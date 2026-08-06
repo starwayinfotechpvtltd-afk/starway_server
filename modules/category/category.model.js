@@ -6,7 +6,7 @@ try {
   dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
 } catch (e) {}
 
-const mongoUri = process.env.MONGO_DB || "mongodb+srv://starwayinfotechpvtltd_db_user:Uasxa81dh1UOMU4I@blogdata.1nfjmvv.mongodb.net";
+const mongoUri = process.env.MONGO_DB;
 
 let isConnected = false;
 async function connectMongo() {
