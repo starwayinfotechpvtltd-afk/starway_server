@@ -22,13 +22,17 @@ const login = async (req, res, next) => {
       });
     }
 
-    if (
-      cleanVal(email).toLowerCase() !== expectedEmail.toLowerCase() ||
-      cleanVal(password) !== expectedPass
-    ) {
+    if (cleanVal(email).toLowerCase() !== expectedEmail.toLowerCase()) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
+        message: `Invalid email address. Expected email: "${expectedEmail}"`,
+      });
+    }
+
+    if (cleanVal(password) !== expectedPass) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid password for this admin account.",
       });
     }
 
