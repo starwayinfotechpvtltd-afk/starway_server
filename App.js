@@ -111,11 +111,15 @@ const morgan       = require("morgan");
 const { testConnection } = require("./config/db");
 const errorHandler = require("./middleware/errorHandler");
 
+const path             = require("path");
 const contactRoutes     = require("./modules/contact/contact.routes");
 const razorpayRoutes    = require("./modules/razorpay/razorpay.routes");
 const paypalRoutes      = require("./modules/paypal/paypal.routes");
 const promoRoutes       = require("./modules/promo/promo.routes");
 const serviceLeadRoutes = require("./modules/serviceLead/serviceLead.routes");
+const adminRoutes       = require("./modules/admin/admin.routes");
+const blogRoutes        = require("./modules/blog/blog.routes");
+const categoryRoutes    = require("./modules/category/category.routes");
 
 // ✅ controllers for direct webhook handling
 const { handleWebhook: razorpayWebhook } = require("./modules/razorpay/razorpay.controller");
@@ -191,12 +195,21 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Serve uploaded files statically
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+const uploadRoutes      = require("./modules/upload/upload.routes");
+
 // ✅ normal routes (after webhook)
 app.use("/api/contact", contactRoutes);
 app.use("/api/razorpay", razorpayRoutes);
 app.use("/api/paypal",   paypalRoutes);
 app.use("/api/promo",    promoRoutes);
 app.use("/api/service-lead", serviceLeadRoutes);
+app.use("/api/admin",   adminRoutes);
+app.use("/api/blogs",   blogRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/upload",  uploadRoutes);
 
 // ─── 404 ─────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
