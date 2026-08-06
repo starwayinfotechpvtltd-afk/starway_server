@@ -5,12 +5,17 @@ const blogModel = require("../blog/blog.model");
 /**
  * POST /api/admin/login
  */
+function cleanVal(v) {
+  if (!v) return "";
+  return v.trim().replace(/^["']|["']$/g, "");
+}
+
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    const expectedEmail = process.env.LOGIN_MAIL_ADMIN || "asad@gmail.com";
-    const expectedPass = process.env.LOGIN_PASS_ADMIN || "asad1234";
+    const expectedEmail = cleanVal(process.env.LOGIN_MAIL_ADMIN) || "asad@gmail.com";
+    const expectedPass = cleanVal(process.env.LOGIN_PASS_ADMIN) || "asad1234";
 
     if (!email || !password) {
       return res.status(400).json({
@@ -19,7 +24,10 @@ const login = async (req, res, next) => {
       });
     }
 
-    if (email.trim().toLowerCase() !== expectedEmail.trim().toLowerCase() || password !== expectedPass) {
+    if (
+      cleanVal(email).toLowerCase() !== expectedEmail.toLowerCase() ||
+      cleanVal(password) !== expectedPass
+    ) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
