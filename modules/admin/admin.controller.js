@@ -5,7 +5,7 @@ const blogModel = require("../blog/blog.model");
 
 function cleanVal(v) {
   if (!v) return "";
-  return v.trim().replace(/^["']|["']$/g, "");
+  return String(v).replace(/[\r\n]/g, "").trim().replace(/^["']|["']$/g, "").trim();
 }
 
 const login = async (req, res, next) => {
