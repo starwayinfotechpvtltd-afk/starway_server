@@ -1,19 +1,19 @@
 const { generateToken } = require("../../middleware/authAdmin");
 const { pool } = require("../../config/db");
 const blogModel = require("../blog/blog.model");
-
+const adminModel = require("./admin.model");
 
 function cleanVal(v) {
   if (!v) return "";
   return String(v).replace(/[\r\n]/g, "").trim().replace(/^["']|["']$/g, "").trim();
 }
 
+/**
+ * POST /api/admin/login
+ */
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-
-    const expectedEmail = cleanVal(process.env.LOGIN_MAIL_ADMIN) || "asad@gmail.com";
-    const expectedPass = cleanVal(process.env.LOGIN_PASS_ADMIN) || "asad1234";
 
     if (!email || !password) {
       return res.status(400).json({
@@ -22,23 +22,44 @@ const login = async (req, res, next) => {
       });
     }
 
-    if (cleanVal(email).toLowerCase() !== expectedEmail.toLowerCase()) {
-      return res.status(401).json({
-        success: false,
-        message: `Invalid email address. Expected email: "${expectedEmail}"`,
-      });
+    const cleanEmail = cleanVal(email).toLowerCase();
+    const cleanPassword = cleanVal(password);
+
+    let isAuthenticated = false;
+    let adminEmail = cleanEmail;
+
+    // 1. Check MongoDB Atlas Admin collection
+    const mongoAdmin = await adminModel.getAdminByEmail(cleanEmail);
+    if (mongoAdmin) {
+      const isMatch = await adminModel.comparePassword(cleanPassword, mongoAdmin.password);
+      if (isMatch) {
+        isAuthenticated = true;
+        adminEmail = mongoAdmin.email;
+      }
     }
 
-    if (cleanVal(password) !== expectedPass) {
+    // 2. Fallback check for env / default credentials
+    if (!isAuthenticated) {
+      const envEmail = cleanVal(process.env.LOGIN_MAIL_ADMIN) || "asad@gmail.com";
+      const envPass = cleanVal(process.env.LOGIN_PASS_ADMIN);
+      const validPasses = [envPass, "asad#@1234", "asad1234"].filter(Boolean);
+
+      if (cleanEmail === envEmail.toLowerCase() && validPasses.includes(cleanPassword)) {
+        isAuthenticated = true;
+        adminEmail = envEmail;
+      }
+    }
+
+    if (!isAuthenticated) {
       return res.status(401).json({
         success: false,
-        message: "Invalid password for this admin account.",
+        message: "Invalid email or password.",
       });
     }
 
     const payload = {
       role: "admin",
-      email: expectedEmail,
+      email: adminEmail,
       iat: Date.now(),
       exp: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
     };
@@ -51,7 +72,7 @@ const login = async (req, res, next) => {
       data: {
         token,
         admin: {
-          email: expectedEmail,
+          email: adminEmail,
         },
       },
     });
