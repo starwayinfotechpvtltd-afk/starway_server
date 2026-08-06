@@ -2,9 +2,7 @@ const { generateToken } = require("../../middleware/authAdmin");
 const { pool } = require("../../config/db");
 const blogModel = require("../blog/blog.model");
 
-/**
- * POST /api/admin/login
- */
+
 function cleanVal(v) {
   if (!v) return "";
   return v.trim().replace(/^["']|["']$/g, "");

@@ -2,9 +2,7 @@ const crypto = require("crypto");
 
 const SECRET_KEY = process.env.JWT_SECRET || process.env.LOGIN_PASS_ADMIN || "starway_admin_secret_key_2026";
 
-/**
- * Generate a secure signed auth token for Admin
- */
+
 function generateToken(payload) {
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
