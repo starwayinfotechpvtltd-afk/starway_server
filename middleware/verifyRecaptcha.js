@@ -4,7 +4,16 @@ const verifyRecaptcha = async (req, res, next) => {
   try {
     const { token } = req.body;
 
+    // If reCAPTCHA secret key is not configured in env, allow request gracefully
+    if (!process.env.RECAPTCHA_SECRET_KEY) {
+      return next();
+    }
+
+    // In dev / test environments allow fallback if token is not provided
     if (!token) {
+      if (process.env.NODE_ENV !== "production") {
+        return next();
+      }
       return res.status(400).json({
         success: false,
         message: "Captcha token missing",
@@ -22,7 +31,7 @@ const verifyRecaptcha = async (req, res, next) => {
       }
     );
 
-    if (!response.data.success) {
+    if (!response.data.success && process.env.NODE_ENV === "production") {
       return res.status(403).json({
         success: false,
         message: "Captcha verification failed",
@@ -32,10 +41,8 @@ const verifyRecaptcha = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Recaptcha error:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Captcha verification error",
-    });
+    // In case of external network issues reaching google recaptcha, don't drop legitimate user leads
+    next();
   }
 };
 

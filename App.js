@@ -200,6 +200,9 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 const uploadRoutes      = require("./modules/upload/upload.routes");
 
+const portfolioRoutes   = require("./modules/portfolio/portfolio.routes");
+const subscriberRoutes  = require("./modules/subscriber/subscriber.routes");
+
 // ✅ normal routes (after webhook)
 app.use("/api/contact", contactRoutes);
 app.use("/api/razorpay", razorpayRoutes);
@@ -209,6 +212,9 @@ app.use("/api/service-lead", serviceLeadRoutes);
 app.use("/api/admin",   adminRoutes);
 app.use("/api/blogs",   blogRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/portfolios", portfolioRoutes);
+app.use("/api/subscribe", subscriberRoutes);
+app.use("/api/subscribers", subscriberRoutes);
 app.use("/api/upload",  uploadRoutes);
 
 // ─── 404 ─────────────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 const blogModel = require("./blog.model");
+const subscriberModel = require("../subscriber/subscriber.model");
+const { notifySubscribersNewBlog } = require("../../utils/mailer");
 
 // Ensure upload directory exists
 const UPLOAD_DIR = path.join(__dirname, "../../uploads/blogs");
@@ -40,7 +42,7 @@ const createPost = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Slug '${finalSlug}' already exists. Please choose a different slug.` });
     }
 
-    const insertId = await blogModel.createPost({
+    const postData = {
       title,
       slug: finalSlug,
       category: category || "General",
@@ -50,7 +52,23 @@ const createPost = async (req, res, next) => {
       featured_image: featured_image || "",
       content: content || "",
       status: status || "draft",
-    });
+    };
+
+    const insertId = await blogModel.createPost(postData);
+
+    // If published, broadcast to all active subscribers in background
+    if (postData.status === "published") {
+      subscriberModel
+        .getAllActiveSubscribers()
+        .then((subs) => {
+          if (subs && subs.length > 0) {
+            notifySubscribersNewBlog({ blog: postData, subscribers: subs });
+          }
+        })
+        .catch((err) => {
+          console.warn("Subscriber blog broadcast error:", err.message);
+        });
+    }
 
     res.status(201).json({
       success: true,
