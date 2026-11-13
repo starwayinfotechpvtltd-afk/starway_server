@@ -11,17 +11,29 @@ try {
 const mongoUri = process.env.MONGO_DB;
 
 let isConnected = false;
+let connectionPromise = null;
 
 async function connectMongo() {
-  if (isConnected) return;
+  if (mongoose.connection.readyState === 1) {
+    isConnected = true;
+    return;
+  }
+  if (connectionPromise) return connectionPromise;
   try {
-    await mongoose.connect(mongoUri, {
+    isConnected = false;
+    if (!mongoUri) throw new Error("MONGO_DB is not configured");
+    connectionPromise = mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 5000,
     });
+    await connectionPromise;
     isConnected = true;
-    console.log("✅ MongoDB connected successfully for Subscribers");
+    console.log("MongoDB connected successfully for subscribers");
   } catch (err) {
-    console.warn("⚠️ MongoDB connection error:", err.message);
+    isConnected = false;
+    console.error("Subscriber database connection failed:", err.message);
+    throw err;
+  } finally {
+    connectionPromise = null;
   }
 }
 
@@ -40,48 +52,26 @@ const subscriberSchema = new mongoose.Schema(
 const SubscriberModel =
   mongoose.models.Subscriber || mongoose.model("Subscriber", subscriberSchema);
 
-// In-memory fallback if MongoDB connection is pending or offline
-const memorySubscribers = [];
-let memoryIdCounter = 1;
-
 /**
- * Add or reactivate a subscriber
+ * Add a new subscriber. Existing records, including unsubscribed records,
+ * must follow the existing consent workflow and are never reactivated here.
  */
 async function addSubscriber(email, source = "ServiceCTA") {
   const normalizedEmail = email.toLowerCase().trim();
+  await connectMongo();
+  const existing = await SubscriberModel.findOne({ email: normalizedEmail }).lean();
+  if (existing) return { id: existing._id.toString(), isNew: false };
+
   try {
-    await connectMongo();
-    const existing = await SubscriberModel.findOne({ email: normalizedEmail });
-    if (existing) {
-      if (existing.status !== "active") {
-        existing.status = "active";
-        await existing.save();
-      }
-      return { id: existing._id.toString(), isNew: false };
-    }
-    const doc = await SubscriberModel.create({
-      email: normalizedEmail,
-      status: "active",
-      source,
-    });
+    const doc = await SubscriberModel.create({ email: normalizedEmail, status: "active", source });
     return { id: doc._id.toString(), isNew: true };
   } catch (err) {
-    console.warn("Using in-memory subscriber store due to Mongo error:", err.message);
-    const existing = memorySubscribers.find((s) => s.email === normalizedEmail);
-    if (existing) {
-      existing.status = "active";
-      return { id: existing.id, isNew: false };
+    // Concurrent requests can both pass the read above; the unique index wins.
+    if (err && err.code === 11000) {
+      const duplicate = await SubscriberModel.findOne({ email: normalizedEmail }).lean();
+      if (duplicate) return { id: duplicate._id.toString(), isNew: false };
     }
-    const newSub = {
-      id: String(memoryIdCounter++),
-      email: normalizedEmail,
-      status: "active",
-      source,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    memorySubscribers.push(newSub);
-    return { id: newSub.id, isNew: true };
+    throw err;
   }
 }
 
@@ -89,38 +79,30 @@ async function addSubscriber(email, source = "ServiceCTA") {
  * Get all active subscribers
  */
 async function getAllActiveSubscribers() {
-  try {
-    await connectMongo();
-    const docs = await SubscriberModel.find({ status: "active" }).lean();
-    return docs.map((doc) => ({
+  await connectMongo();
+  const docs = await SubscriberModel.find({ status: "active" }).lean();
+  return docs.map((doc) => ({
       id: doc._id.toString(),
       email: doc.email,
       status: doc.status,
       source: doc.source,
       createdAt: doc.createdAt,
-    }));
-  } catch (err) {
-    return memorySubscribers.filter((s) => s.status === "active");
-  }
+  }));
 }
 
 /**
  * Get all subscribers (admin view)
  */
 async function getAllSubscribers() {
-  try {
-    await connectMongo();
-    const docs = await SubscriberModel.find().sort({ createdAt: -1 }).lean();
-    return docs.map((doc) => ({
+  await connectMongo();
+  const docs = await SubscriberModel.find().sort({ createdAt: -1 }).lean();
+  return docs.map((doc) => ({
       id: doc._id.toString(),
       email: doc.email,
       status: doc.status,
       source: doc.source,
       createdAt: doc.createdAt,
-    }));
-  } catch (err) {
-    return memorySubscribers;
-  }
+  }));
 }
 
 /**
@@ -128,22 +110,13 @@ async function getAllSubscribers() {
  */
 async function unsubscribe(email) {
   const normalizedEmail = email.toLowerCase().trim();
-  try {
-    await connectMongo();
-    const res = await SubscriberModel.findOneAndUpdate(
+  await connectMongo();
+  const res = await SubscriberModel.findOneAndUpdate(
       { email: normalizedEmail },
       { status: "unsubscribed" },
       { new: true }
-    );
-    return !!res;
-  } catch (err) {
-    const sub = memorySubscribers.find((s) => s.email === normalizedEmail);
-    if (sub) {
-      sub.status = "unsubscribed";
-      return true;
-    }
-    return false;
-  }
+  );
+  return !!res;
 }
 
 module.exports = {

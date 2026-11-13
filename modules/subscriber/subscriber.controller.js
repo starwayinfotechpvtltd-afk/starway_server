@@ -12,9 +12,9 @@ const {
 // ─── POST /api/subscribe ────────────────────────────────────────────────────
 const subscribe = async (req, res, next) => {
   try {
-    const { email, source } = req.body;
+    const { email, source } = req.body || {};
 
-    if (!email || !email.trim()) {
+    if (typeof email !== "string" || !email.trim()) {
       return res.status(400).json({
         success: false,
         message: "Please provide a valid email address.",
@@ -32,12 +32,22 @@ const subscribe = async (req, res, next) => {
     const cleanEmail = email.trim().toLowerCase();
     const result = await addSubscriber(cleanEmail, source || "ServiceCTA");
 
-    // Asynchronously send confirmation welcome email to subscriber and admin alert
+    if (!result.isNew) {
+      return res.status(409).json({
+        success: false,
+        alreadySubscribed: true,
+        message: "You are already subscribed with this email!",
+      });
+    }
+
+    // Send mail only for the request that created the subscriber record.
     Promise.allSettled([
       sendSubscriberWelcomeEmail({ email: cleanEmail }),
       sendAdminNewSubscriberNotification({ email: cleanEmail, source: source || "ServiceCTA" }),
-    ]).catch((err) => {
-      console.warn("Subscriber email alert error:", err.message);
+    ]).then((results) => {
+      results.filter((result) => result.status === "rejected").forEach((result) => {
+        console.error("Subscriber email delivery error:", result.reason?.message || result.reason);
+      });
     });
 
     res.status(200).json({
